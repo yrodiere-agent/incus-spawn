@@ -35,9 +35,9 @@
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <quarkus.platform.artifact-id>quarkus-bom</quarkus.platform.artifact-id>
         <quarkus.platform.group-id>io.quarkus.platform</quarkus.platform.group-id>
-        <quarkus.platform.version>3.34.1</quarkus.platform.version>
+        <quarkus.platform.version>3.35.3</quarkus.platform.version>
         <skipITs>true</skipITs>
-        <surefire-plugin.version>3.5.4</surefire-plugin.version>
+        <surefire-plugin.version>3.5.5</surefire-plugin.version>
     </properties>
 
     <dependencyManagement>
@@ -76,17 +76,17 @@
         <dependency>
             <groupId>dev.tamboui</groupId>
             <artifactId>tamboui-picocli</artifactId>
-            <version>0.1.0</version>
+            <version>0.3.0</version>
         </dependency>
         <dependency>
             <groupId>dev.tamboui</groupId>
             <artifactId>tamboui-toolkit</artifactId>
-            <version>0.1.0</version>
+            <version>0.3.0</version>
         </dependency>
         <dependency>
             <groupId>dev.tamboui</groupId>
             <artifactId>tamboui-panama-backend</artifactId>
-            <version>0.1.0</version>
+            <version>0.3.0</version>
         </dependency>
         <dependency>
             <groupId>io.quarkus</groupId>
@@ -136,7 +136,7 @@
             <plugin>
                 <groupId>io.github.git-commit-id</groupId>
                 <artifactId>git-commit-id-maven-plugin</artifactId>
-                <version>9.0.1</version>
+                <version>9.2.0</version>
                 <executions>
                     <execution>
                         <goals><goal>revision</goal></goals>
