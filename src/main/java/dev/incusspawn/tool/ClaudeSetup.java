@@ -62,9 +62,6 @@ public class ClaudeSetup implements ToolSetup {
             c.filePush(cached.toString(), claudeBin);
             c.exec("chmod", "+x", claudeBin);
             c.chown(claudeBin, "agentuser:agentuser");
-
-            c.runAsUser("agentuser", claudeBin + " install",
-                    "Failed to set up Claude Code shell integration");
         } catch (IOException e) {
             throw new RuntimeException("Failed to install Claude Code: " + e.getMessage(), e);
         }
