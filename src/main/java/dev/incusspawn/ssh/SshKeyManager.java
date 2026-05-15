@@ -285,13 +285,6 @@ public final class SshKeyManager {
         var ip = ipResult.stdout().strip().split("\\s+")[0];
         if (ip.isEmpty()) return false;
 
-        // Regenerate host keys so CoW-branched instances get unique keys
-        var regenResult = incus.shellExec(instanceName, "sh", "-c",
-                "rm -f /etc/ssh/ssh_host_*_key /etc/ssh/ssh_host_*_key.pub && ssh-keygen -A");
-        if (!regenResult.success()) return false;
-        var restartResult = incus.shellExec(instanceName, "systemctl", "restart", "sshd");
-        if (!restartResult.success()) return false;
-
         String hostKeyLine = null;
         for (var keyFile : List.of(
                 "/etc/ssh/ssh_host_ed25519_key.pub",

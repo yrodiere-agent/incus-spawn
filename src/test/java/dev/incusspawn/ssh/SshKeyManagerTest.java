@@ -347,8 +347,6 @@ class SshKeyManagerTest {
     void harvestHostKeyWritesConfigAndKnownHosts() {
         var incus = new StubIncusClient();
         incus.stubShellExec("test-vm:hostname -I", 0, "10.0.0.99 ");
-        incus.stubShellExec("test-vm:sh -c rm -f /etc/ssh/ssh_host_*_key /etc/ssh/ssh_host_*_key.pub && ssh-keygen -A", 0, "");
-        incus.stubShellExec("test-vm:systemctl restart sshd", 0, "");
         incus.stubShellExec("test-vm:cat /etc/ssh/ssh_host_ed25519_key.pub", 0,
                 "ssh-ed25519 AAAAC3NzTestKey root@test-vm\n");
 
@@ -365,9 +363,6 @@ class SshKeyManagerTest {
     void harvestHostKeyFallsBackToEcdsaKey() {
         var incus = new StubIncusClient();
         incus.stubShellExec("test-vm:hostname -I", 0, "10.0.0.50 ");
-        incus.stubShellExec("test-vm:sh -c rm -f /etc/ssh/ssh_host_*_key /etc/ssh/ssh_host_*_key.pub && ssh-keygen -A", 0, "");
-        incus.stubShellExec("test-vm:systemctl restart sshd", 0, "");
-        // ed25519 not available, ecdsa is
         incus.stubShellExec("test-vm:cat /etc/ssh/ssh_host_ecdsa_key.pub", 0,
                 "ecdsa-sha2-nistp256 AAAAE2VjZHNhEcdsaKey root@test-vm\n");
 
@@ -391,17 +386,6 @@ class SshKeyManagerTest {
     void harvestHostKeyReturnsFalseWhenNoHostKeys() {
         var incus = new StubIncusClient();
         incus.stubShellExec("test-vm:hostname -I", 0, "10.0.0.1 ");
-        incus.stubShellExec("test-vm:sh -c rm -f /etc/ssh/ssh_host_*_key /etc/ssh/ssh_host_*_key.pub && ssh-keygen -A", 0, "");
-        incus.stubShellExec("test-vm:systemctl restart sshd", 0, "");
-
-        assertFalse(SshKeyManager.harvestHostKey(incus, "test-vm"));
-    }
-
-    @Test
-    void harvestHostKeyReturnsFalseWhenRegenFails() {
-        var incus = new StubIncusClient();
-        incus.stubShellExec("test-vm:hostname -I", 0, "10.0.0.1 ");
-        incus.stubShellExec("test-vm:sh -c rm -f /etc/ssh/ssh_host_*_key /etc/ssh/ssh_host_*_key.pub && ssh-keygen -A", 1, "");
 
         assertFalse(SshKeyManager.harvestHostKey(incus, "test-vm"));
     }
