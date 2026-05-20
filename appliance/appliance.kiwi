@@ -84,12 +84,8 @@
     </packages>
 
     <!-- Strip the package manager from the final image -->
-    <!-- TODO: Re-enable once we figure out correct package names and dependencies
     <packages type="uninstall">
         <package name="zypper"/>
         <package name="libzypp"/>
-        <package name="libsolv-tools"/>
-        <package name="rpm"/>
     </packages>
-    -->
 </image>
