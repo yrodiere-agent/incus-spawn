@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="utf-8"?>
+<image schemaversion="7.5" name="incus-spawn-appliance">
+    <description type="system">
+        <author>incus-spawn</author>
+        <contact>https://github.com/Sanne/incus-spawn</contact>
+        <specification>
+            Minimal openSUSE Tumbleweed VM appliance for running Incus containers.
+            Designed for direct kernel boot with QEMU microvm or Apple Virtualization.framework.
+        </specification>
+    </description>
+
+    <preferences>
+        <version>1.0.0</version>
+        <packagemanager>zypper</packagemanager>
+        <rpm-excludedocs>true</rpm-excludedocs>
+        <rpm-check-signatures>false</rpm-check-signatures>
+        <type
+            image="oem"
+            filesystem="ext4"
+            kernelcmdline="console=ttyS0 quiet systemd.show_status=no"
+            firmware="uefi"
+            format="qcow2"
+            formatoptions="preallocation=off,lazy_refcounts=on"
+        >
+            <oemconfig>
+                <oem-resize>false</oem-resize>
+            </oemconfig>
+            <size unit="G">8</size>
+        </type>
+    </preferences>
+
+    <users>
+        <user
+            password="!"
+            home="/root"
+            name="root"
+            groups="root"
+        />
+    </users>
+
+    <repository type="rpm-md">
+        <source path="obsrepositories:/"/>
+    </repository>
+
+    <packages type="image">
+        <!-- Base system -->
+        <package name="patterns-base-minimal_base"/>
+        <package name="systemd"/>
+        <package name="util-linux"/>
+        <package name="aaa_base"/>
+
+        <!-- Kernel -->
+        <package name="kernel-default"/>
+
+        <!-- Boot (UEFI) -->
+        <package name="grub2"/>
+        <package name="grub2-x86_64-efi" arch="x86_64"/>
+        <package name="shim" arch="x86_64"/>
+
+        <!-- Networking -->
+        <package name="systemd-network"/>
+        <package name="iproute2"/>
+        <package name="iptables"/>
+
+        <!-- Incus -->
+        <package name="incus"/>
+
+        <!-- Storage -->
+        <package name="btrfs-progs"/>
+        <package name="lvm2"/>
+
+        <!-- Remote access -->
+        <package name="openssh-server"/>
+        <package name="openssh-clients"/>
+
+        <!-- Utilities (minimal) -->
+        <package name="less"/>
+        <package name="which"/>
+        <package name="findutils"/>
+        <package name="tar"/>
+        <package name="gzip"/>
+        <package name="procps"/>
+        <package name="hostname"/>
+        <package name="vim-small"/>
+
+        <!-- TLS -->
+        <package name="ca-certificates"/>
+        <package name="ca-certificates-mozilla"/>
+        <package name="openssl"/>
+    </packages>
+
+    <packages type="bootstrap">
+        <package name="filesystem"/>
+        <package name="glibc-locale-base"/>
+        <package name="ca-certificates"/>
+        <package name="ca-certificates-mozilla"/>
+        <package name="openSUSE-release"/>
+        <package name="shadow"/>
+        <package name="gawk"/>
+        <package name="grep"/>
+        <package name="gzip"/>
+        <package name="udev"/>
+        <package name="cracklib-dict-full"/>
+    </packages>
+
+    <!-- Strip the package manager from the final image -->
+    <packages type="uninstall">
+        <package name="zypper"/>
+        <package name="libzypp"/>
+        <package name="libsolv-tools"/>
+        <package name="rpm"/>
+        <package name="cracklib"/>
+        <package name="cracklib-dict-full"/>
+    </packages>
+</image>

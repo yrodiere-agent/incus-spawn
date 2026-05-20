@@ -1,0 +1,62 @@
+#!/bin/bash
+# incus-spawn VM boot initialization script.
+# Runs as a oneshot systemd service after Incus is ready.
+# Reads configuration from kernel command line parameters.
+
+set -euo pipefail
+
+parse_cmdline() {
+    local key="$1"
+    sed -rn "s/.*${key}=([^ ]+).*/\1/p" /proc/cmdline
+}
+
+GATEWAY_IP=$(parse_cmdline "isx.gateway")
+MITM_PORT=$(parse_cmdline "isx.mitm_port")
+HEALTH_PORT=$(parse_cmdline "isx.health_port")
+SHARED_DIR=$(parse_cmdline "isx.shared")
+
+: "${GATEWAY_IP:=10.166.11.1}"
+: "${MITM_PORT:=18443}"
+: "${HEALTH_PORT:=18080}"
+: "${SHARED_DIR:=/mnt/host}"
+
+echo "incus-spawn-vm-init: gateway=${GATEWAY_IP} mitm=${MITM_PORT} health=${HEALTH_PORT}"
+
+# Wait for Incus daemon
+for i in $(seq 1 30); do
+    if incus info > /dev/null 2>&1; then
+        break
+    fi
+    sleep 1
+done
+
+# Ensure bridge exists and has the expected gateway IP
+BRIDGE_IP=$(incus network get incusbr0 ipv4.address 2>/dev/null || true)
+if [ -z "$BRIDGE_IP" ]; then
+    incus network create incusbr0 ipv4.address="${GATEWAY_IP}/24" ipv4.nat=true ipv6.address=none
+else
+    echo "incus-spawn-vm-init: bridge already configured at ${BRIDGE_IP}"
+fi
+
+# Ensure btrfs CoW storage pool exists
+if ! incus storage show cow > /dev/null 2>&1; then
+    LOOP_FILE="/var/lib/incus/disks/cow.img"
+    mkdir -p "$(dirname "$LOOP_FILE")"
+    truncate -s 4G "$LOOP_FILE"
+    incus storage create cow btrfs source="$LOOP_FILE"
+fi
+
+# Configure iptables: redirect port 443 on gateway to MITM proxy port
+ACTUAL_GW=$(incus network get incusbr0 ipv4.address 2>/dev/null | cut -d/ -f1)
+if [ -n "$ACTUAL_GW" ]; then
+    iptables -t nat -A PREROUTING -i incusbr0 -d "$ACTUAL_GW" \
+        -p tcp --dport 443 -j REDIRECT --to-port "$MITM_PORT"
+fi
+
+# Symlink isx binary from shared directory if available
+if [ -d "$SHARED_DIR" ] && [ -f "$SHARED_DIR/isx" ]; then
+    ln -sf "$SHARED_DIR/isx" /usr/local/bin/isx
+    echo "incus-spawn-vm-init: isx binary linked from ${SHARED_DIR}/isx"
+fi
+
+echo "incus-spawn-vm-init: ready"

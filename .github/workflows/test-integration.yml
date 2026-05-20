@@ -1,0 +1,164 @@
+name: Integration Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Oracle GraalVM JDK 25
+        uses: graalvm/setup-graalvm@v1
+        with:
+          java-version: '25'
+          distribution: 'graalvm'
+
+      - name: Run unit tests
+        run: mvn test
+
+  build-appliance:
+    uses: ./.github/workflows/build-appliance.yml
+
+  integration-tests:
+    needs: [unit-tests, build-appliance]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Restore appliance image
+        uses: actions/cache/restore@v4
+        with:
+          path: appliance/build/incus-spawn-appliance.qcow2
+          key: ${{ needs.build-appliance.outputs.cache-key }}
+          fail-on-cache-miss: true
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Check KVM availability
+        id: kvm
+        run: |
+          if [ -e /dev/kvm ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+            echo "KVM is available"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::KVM not available on this runner — skipping VM-based tests"
+          fi
+
+      - name: Install QEMU
+        if: steps.kvm.outputs.available == 'true'
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq qemu-system-x86 qemu-utils
+
+      - name: Extract kernel from appliance image
+        if: steps.kvm.outputs.available == 'true'
+        run: |
+          sudo modprobe nbd max_part=8
+          sudo qemu-nbd --connect=/dev/nbd0 appliance/build/incus-spawn-appliance.qcow2
+          sleep 2
+          sudo partprobe /dev/nbd0
+          BOOT_PART=$(sudo fdisk -l /dev/nbd0 | grep -i 'EFI\|Linux filesystem' | tail -1 | awk '{print $1}')
+          sudo mkdir -p /mnt/appliance
+          sudo mount "$BOOT_PART" /mnt/appliance
+          sudo cp /mnt/appliance/boot/vmlinuz* vmlinuz || sudo cp /mnt/appliance/vmlinuz* vmlinuz
+          sudo cp /mnt/appliance/boot/initrd* initrd 2>/dev/null || true
+          sudo umount /mnt/appliance
+          sudo qemu-nbd --disconnect /dev/nbd0
+          ls -lh vmlinuz initrd 2>/dev/null || ls -lh vmlinuz
+
+      - name: Boot appliance VM
+        if: steps.kvm.outputs.available == 'true'
+        run: |
+          # Boot the VM in the background with serial console logged to file
+          qemu-system-x86_64 \
+            -machine q35 \
+            -enable-kvm \
+            -cpu host \
+            -m 2G \
+            -smp 2 \
+            -drive file=appliance/build/incus-spawn-appliance.qcow2,format=qcow2,if=virtio \
+            -netdev user,id=net0,hostfwd=tcp::2222-:22 \
+            -device virtio-net-pci,netdev=net0 \
+            -nographic \
+            -serial file:vm-console.log \
+            -daemonize \
+            -pidfile vm.pid
+
+          echo "VM started (PID $(cat vm.pid)). Waiting for boot..."
+
+          # Wait for VM to become reachable via SSH (up to 120 seconds)
+          for i in $(seq 1 60); do
+            if ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+                   -o ConnectTimeout=2 -p 2222 root@localhost "echo ready" 2>/dev/null; then
+              echo "VM is ready after ~$((i*2)) seconds"
+              break
+            fi
+            sleep 2
+          done
+
+      - name: Smoke test - Incus daemon
+        if: steps.kvm.outputs.available == 'true'
+        run: |
+          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+              -p 2222 root@localhost "incus version && incus info" || {
+            echo "::error::Incus daemon not responding"
+            echo "--- VM console log ---"
+            cat vm-console.log
+            exit 1
+          }
+
+      - name: Smoke test - systemd services
+        if: steps.kvm.outputs.available == 'true'
+        run: |
+          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+              -p 2222 root@localhost \
+              "systemctl is-active incus && systemctl is-active incus-spawn-vm" || {
+            echo "::error::Required services not running"
+            ssh -p 2222 root@localhost "systemctl --failed" 2>/dev/null || true
+            cat vm-console.log
+            exit 1
+          }
+
+      - name: Smoke test - bridge and storage
+        if: steps.kvm.outputs.available == 'true'
+        run: |
+          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+              -p 2222 root@localhost \
+              "incus network show incusbr0 && incus storage show cow" || {
+            echo "::error::Bridge or storage pool not configured"
+            exit 1
+          }
+
+      - name: Report boot time
+        if: steps.kvm.outputs.available == 'true'
+        run: |
+          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+              -p 2222 root@localhost \
+              "systemd-analyze time && systemd-analyze blame | head -15" || true
+
+      - name: Cleanup VM
+        if: always() && steps.kvm.outputs.available == 'true'
+        run: |
+          if [ -f vm.pid ]; then
+            kill "$(cat vm.pid)" 2>/dev/null || true
+          fi
+
+      - name: Upload console log
+        if: always() && steps.kvm.outputs.available == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: vm-console-log
+          path: vm-console.log
+          retention-days: 7
