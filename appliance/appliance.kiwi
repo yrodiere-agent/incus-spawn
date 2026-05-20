@@ -18,8 +18,8 @@
             image="oem"
             filesystem="ext4"
             initrd_system="none"
-            bootloader="custom"
             kernelcmdline="console=ttyS0 quiet systemd.show_status=no"
+            firmware="uefi"
             format="qcow2"
             formatoptions="preallocation=off,lazy_refcounts=on"
             installiso="false"
@@ -52,6 +52,10 @@
 
         <!-- Kernel -->
         <package name="kernel-default"/>
+
+        <!-- Boot (GRUB needed for OEM build, unused - QEMU does direct kernel boot) -->
+        <package name="grub2"/>
+        <package name="grub2-x86_64-efi" arch="x86_64"/>
 
         <!-- Networking -->
         <package name="systemd-network"/>
