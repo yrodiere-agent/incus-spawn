@@ -15,13 +15,16 @@
         <rpm-excludedocs>true</rpm-excludedocs>
         <rpm-check-signatures>false</rpm-check-signatures>
         <type
-            image="vmx"
+            image="oem"
             filesystem="ext4"
             kernelcmdline="console=ttyS0 quiet systemd.show_status=no"
+            firmware="uefi"
             format="qcow2"
             formatoptions="preallocation=off,lazy_refcounts=on"
-            boottimeout="0"
         >
+            <oemconfig>
+                <oem-resize>false</oem-resize>
+            </oemconfig>
             <size unit="G">8</size>
         </type>
     </preferences>
@@ -48,6 +51,8 @@
         <!-- Kernel -->
         <package name="kernel-default"/>
 
+        <!-- Boot (required by KIWI OEM type, unused at runtime - QEMU does direct kernel boot) -->
+        <package name="dracut"/>
 
         <!-- Networking -->
         <package name="systemd-network"/>
