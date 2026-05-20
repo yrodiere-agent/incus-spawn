@@ -51,18 +51,33 @@ echo "root:100000:65536" >> /etc/subuid
 echo "root:100000:65536" >> /etc/subgid
 
 #-- SSH: disable password auth, enable pubkey --#
-sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
-sed -i 's/^#*PubkeyAuthentication.*/PubkeyAuthentication yes/' /etc/ssh/sshd_config
+if [ -f /etc/ssh/sshd_config ]; then
+    sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
+    sed -i 's/^#*PubkeyAuthentication.*/PubkeyAuthentication yes/' /etc/ssh/sshd_config
+else
+    # Create minimal sshd_config if package didn't provide one
+    mkdir -p /etc/ssh
+    cat > /etc/ssh/sshd_config << 'SSHEOF'
+PasswordAuthentication no
+PubkeyAuthentication yes
+PermitRootLogin prohibit-password
+UsePAM yes
+X11Forwarding no
+PrintMotd no
+AcceptEnv LANG LC_*
+Subsystem sftp /usr/lib/ssh/sftp-server
+SSHEOF
+fi
 
 #-- Root SSH dir for authorized_keys injection --#
 mkdir -p /root/.ssh
 chmod 700 /root/.ssh
 
 #-- Strip locale data and docs to minimize image size --#
-rm -rf /usr/share/man /usr/share/doc /usr/share/info
-rm -rf /usr/share/locale/*
-rm -rf /var/cache/zypp /var/log/zypp
-rm -rf /tmp/* /var/tmp/*
+rm -rf /usr/share/man /usr/share/doc /usr/share/info 2>/dev/null || true
+rm -rf /usr/share/locale/* 2>/dev/null || true
+rm -rf /var/cache/zypp /var/log/zypp 2>/dev/null || true
+rm -rf /tmp/* /var/tmp/* 2>/dev/null || true
 
 #-- Set default locale --#
 echo 'LANG=C.UTF-8' > /etc/locale.conf
