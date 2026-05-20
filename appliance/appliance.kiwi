@@ -54,6 +54,7 @@
         <!-- Boot (UEFI) - minimal, prefer direct kernel boot -->
         <package name="grub2"/>
         <package name="grub2-x86_64-efi" arch="x86_64"/>
+        <package name="dracut"/>
 
         <!-- Networking -->
         <package name="systemd-network"/>
