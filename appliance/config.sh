@@ -73,6 +73,16 @@ fi
 mkdir -p /root/.ssh
 chmod 700 /root/.ssh
 
+#-- Copy kernel to /boot for direct kernel boot extraction --#
+# With initrd_system="none", KIWI doesn't copy vmlinuz to /boot, do it manually
+for kver in /lib/modules/*; do
+    if [ -d "$kver" ] && [ -f "$kver/vmlinuz" ]; then
+        KVERSION=$(basename "$kver")
+        cp "$kver/vmlinuz" "/boot/vmlinuz-$KVERSION"
+        echo "Copied kernel: /boot/vmlinuz-$KVERSION"
+    fi
+done
+
 #-- Strip locale data and docs to minimize image size --#
 rm -rf /usr/share/man /usr/share/doc /usr/share/info 2>/dev/null || true
 rm -rf /usr/share/locale/* 2>/dev/null || true
