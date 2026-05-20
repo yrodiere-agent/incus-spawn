@@ -17,7 +17,7 @@
         <type
             image="oem"
             filesystem="ext4"
-            kernelcmdline="console=ttyS0 quiet systemd.show_status=no"
+            kernelcmdline="console=ttyS0 quiet systemd.show_status=no rootflags=noatime"
             format="qcow2"
             formatoptions="preallocation=off,lazy_refcounts=on"
             installiso="false"
