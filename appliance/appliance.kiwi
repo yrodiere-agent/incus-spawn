@@ -83,9 +83,5 @@
         <package name="udev"/>
     </packages>
 
-    <!-- Strip the package manager from the final image -->
-    <packages type="uninstall">
-        <package name="zypper"/>
-        <package name="libzypp"/>
-    </packages>
+    <!-- Package manager removal via config.sh instead of KIWI uninstall -->
 </image>

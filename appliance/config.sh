@@ -79,6 +79,12 @@ rm -rf /usr/share/locale/* 2>/dev/null || true
 rm -rf /var/cache/zypp /var/log/zypp 2>/dev/null || true
 rm -rf /tmp/* /var/tmp/* 2>/dev/null || true
 
+#-- Remove package manager for immutable appliance --#
+# KIWI's <packages type="uninstall"> fails, so remove manually
+rm -f /usr/bin/zypper /usr/bin/rpm 2>/dev/null || true
+rm -rf /usr/lib*/libzypp* /usr/lib*/librpm* 2>/dev/null || true
+rm -rf /usr/share/zypper 2>/dev/null || true
+
 #-- Set default locale --#
 echo 'LANG=C.UTF-8' > /etc/locale.conf
 
