@@ -88,7 +88,7 @@ exec qemu-system-x86_64 \
     -smp 2 \
     -kernel "/tmp/vmlinuz-$KERNEL_VERSION" \
     $INITRD_ARG \
-    -append "root=$ROOT_DEV console=ttyS0 quiet systemd.show_status=no rw" \
+    -append "root=$ROOT_DEV console=ttyS0 quiet systemd.show_status=no rw rootwait" \
     -drive file="$IMAGE",format=qcow2,if=virtio \
     -netdev user,id=net0,hostfwd=tcp::2222-:22 \
     -device virtio-net-pci,netdev=net0 \
