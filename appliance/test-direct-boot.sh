@@ -40,14 +40,14 @@ else
     exit 1
 fi
 
-# Extract kernel
-KERNEL=$(find "$MOUNT_DIR/boot" -name 'vmlinuz-*' -type f | head -1)
+# Extract kernel (from /lib/modules with initrd_system="none")
+KERNEL=$(find "$MOUNT_DIR/lib/modules" -name 'vmlinuz' -type f | head -1)
 if [ -z "$KERNEL" ]; then
-    echo "ERROR: No kernel found in /boot" >&2
+    echo "ERROR: No kernel found in /lib/modules" >&2
     exit 1
 fi
 
-KERNEL_VERSION=$(basename "$KERNEL" | sed 's/vmlinuz-//')
+KERNEL_VERSION=$(basename "$(dirname "$KERNEL")")
 cp "$KERNEL" "/tmp/vmlinuz-$KERNEL_VERSION"
 echo "  Kernel: /tmp/vmlinuz-$KERNEL_VERSION"
 
