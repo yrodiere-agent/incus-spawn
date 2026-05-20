@@ -18,7 +18,6 @@
             image="oem"
             filesystem="ext4"
             kernelcmdline="console=ttyS0 quiet systemd.show_status=no"
-            firmware="uefi"
             format="qcow2"
             formatoptions="preallocation=off,lazy_refcounts=on"
             installiso="false"
@@ -52,9 +51,8 @@
         <!-- Kernel -->
         <package name="kernel-default"/>
 
-        <!-- Boot (GRUB + dracut for OEM build, GRUB unused - QEMU does direct kernel boot) -->
+        <!-- Boot (minimal - only dracut for initrd, GRUB legacy for OEM requirement) -->
         <package name="grub2"/>
-        <package name="grub2-x86_64-efi" arch="x86_64"/>
         <package name="dracut"/>
 
         <!-- Networking -->
