@@ -79,6 +79,7 @@
         <package name="glibc-locale-base"/>
         <package name="ca-certificates"/>
         <package name="ca-certificates-mozilla"/>
+        <package name="openSUSE-release"/>
         <package name="shadow"/>
         <package name="udev"/>
     </packages>
