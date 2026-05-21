@@ -40,7 +40,7 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq zypper qemu-utils
-          sudo pip install kiwi
+          sudo pip install kiwi==10.0.0
 
       - name: Build appliance image
         if: steps.cache.outputs.cache-hit != 'true'
