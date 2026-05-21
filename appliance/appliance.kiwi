@@ -82,6 +82,10 @@
         <package name="openSUSE-release"/>
         <package name="shadow"/>
         <package name="udev"/>
+        <package name="rpm"/>
+        <package name="gawk"/>
+        <package name="grep"/>
+        <package name="gzip"/>
     </packages>
 
     <!-- Package manager removal via config.sh instead of KIWI uninstall -->
