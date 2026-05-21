@@ -15,18 +15,10 @@
         <rpm-excludedocs>true</rpm-excludedocs>
         <rpm-check-signatures>false</rpm-check-signatures>
         <type
-            image="oem"
+            image="kis"
             filesystem="ext4"
-            kernelcmdline="console=ttyS0 quiet systemd.show_status=no rootflags=noatime"
-            format="qcow2"
-            formatoptions="preallocation=off,lazy_refcounts=on"
-            installiso="false"
-        >
-            <oemconfig>
-                <oem-resize>false</oem-resize>
-            </oemconfig>
-            <size unit="G">8</size>
-        </type>
+            kernelcmdline="console=ttyS0 quiet systemd.show_status=no rootflags=noatime rw"
+        />
     </preferences>
 
     <users>
