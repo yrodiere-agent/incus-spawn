@@ -116,6 +116,12 @@ zypper --non-interactive install --no-recommends \
     ca-certificates-mozilla
 "
 
+# Copy overlay files BEFORE config.sh so systemd units exist
+if [ -d "appliance/root" ]; then
+    echo "Copying overlay files..."
+    cp -a appliance/root/* "$MOUNT_DIR/"
+fi
+
 # Run config.sh customization script if it exists
 if [ -f "appliance/config.sh" ]; then
     echo "Running config.sh customization..."
@@ -123,12 +129,6 @@ if [ -f "appliance/config.sh" ]; then
     chmod +x "$MOUNT_DIR/tmp/config.sh"
     chroot "$MOUNT_DIR" /tmp/config.sh
     rm "$MOUNT_DIR/tmp/config.sh"
-fi
-
-# Copy overlay files
-if [ -d "appliance/root" ]; then
-    echo "Copying overlay files..."
-    cp -a appliance/root/* "$MOUNT_DIR/"
 fi
 
 # Install bootloader
