@@ -1,111 +1,62 @@
 #!/bin/bash
 set -euo pipefail
 
-# Build VM appliance from openSUSE container image
-# This bypasses KIWI's rpm database caching issues in GitHub Actions
+# Build VM appliance from openSUSE container image.
+# No block devices or KVM required — works inside containers.
+#
+# Strategy: build rootfs in a directory via podman+chroot, then pack
+# it into a raw ext4 image using mkfs.ext4 + debugfs, convert to qcow2.
 
-TARGET_DIR="${1:-appliance/build}"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+TARGET_DIR="${1:-$SCRIPT_DIR/build}"
 IMAGE_SIZE="${2:-2G}"
 CONTAINER_IMAGE="registry.opensuse.org/opensuse/tumbleweed:latest"
 
-echo "Building incus-spawn appliance from container..."
+echo "Building incus-spawn appliance..."
 echo "  Container:   $CONTAINER_IMAGE"
 echo "  Target:      $TARGET_DIR"
 echo "  Image size:  $IMAGE_SIZE"
 echo
 
-# Create target directory
 mkdir -p "$TARGET_DIR"
 
-# Create a sparse qcow2 image
+ROOTFS_DIR=$(mktemp -d)
 DISK_IMAGE="$TARGET_DIR/incus-spawn-appliance.qcow2"
-echo "Creating disk image..."
-qemu-img create -f qcow2 "$DISK_IMAGE" "$IMAGE_SIZE"
-
-# Create a temporary mount point
-MOUNT_DIR=$(mktemp -d)
-NBD_DEVICE="/dev/nbd0"
+RAW_IMAGE=$(mktemp --suffix=.raw)
 
 cleanup() {
     echo "Cleaning up..."
-    sync
-    umount "$MOUNT_DIR" 2>/dev/null || true
-    qemu-nbd --disconnect "$NBD_DEVICE" 2>/dev/null || true
-    rmdir "$MOUNT_DIR" 2>/dev/null || true
+    umount "$ROOTFS_DIR/dev" 2>/dev/null || true
+    umount "$ROOTFS_DIR/proc" 2>/dev/null || true
+    umount "$ROOTFS_DIR/sys" 2>/dev/null || true
+    rm -rf "$ROOTFS_DIR"
+    rm -f "$RAW_IMAGE"
 }
 trap cleanup EXIT
 
-# Load nbd kernel module
-echo "Loading nbd module..."
-modprobe nbd max_part=8
-
-# Connect qcow2 to NBD
-echo "Connecting image to NBD device..."
-qemu-nbd --connect="$NBD_DEVICE" "$DISK_IMAGE"
-
-# Wait for device
-sleep 1
-
-# Create partition table and partition (MBR for simpler GRUB installation)
-echo "Creating partition table..."
-parted -s "$NBD_DEVICE" mklabel msdos
-parted -s "$NBD_DEVICE" mkpart primary ext4 1MiB 100%
-parted -s "$NBD_DEVICE" set 1 boot on
-
-# Wait for partition device
-sleep 1
-PART_DEVICE="${NBD_DEVICE}p1"
-
-# Format partition
-echo "Creating ext4 filesystem..."
-mkfs.ext4 -F "$PART_DEVICE"
-
-# Mount partition
-echo "Mounting partition..."
-mount "$PART_DEVICE" "$MOUNT_DIR"
-
-# Extract container rootfs
-echo "Extracting container rootfs..."
+# --- Step 1: Extract container rootfs ---
+echo "==> Extracting container rootfs..."
 podman pull "$CONTAINER_IMAGE"
 CONTAINER_ID=$(podman create "$CONTAINER_IMAGE")
-podman export "$CONTAINER_ID" | tar -xC "$MOUNT_DIR"
+podman export "$CONTAINER_ID" | tar -xC "$ROOTFS_DIR"
 podman rm "$CONTAINER_ID"
+echo "    Rootfs size: $(du -sh "$ROOTFS_DIR" | cut -f1)"
 
-# Install packages needed for a bootable VM
-echo "Installing additional packages via chroot..."
-mount --bind /dev "$MOUNT_DIR/dev"
-mount --bind /proc "$MOUNT_DIR/proc"
-mount --bind /sys "$MOUNT_DIR/sys"
+# --- Step 2: Set up chroot environment ---
+echo "==> Setting up chroot..."
+mount --bind /dev "$ROOTFS_DIR/dev"
+mount --bind /proc "$ROOTFS_DIR/proc"
+mount --bind /sys "$ROOTFS_DIR/sys"
+cp /etc/resolv.conf "$ROOTFS_DIR/etc/resolv.conf"
 
-# Copy DNS configuration for network access in chroot
-cp /etc/resolv.conf "$MOUNT_DIR/etc/resolv.conf"
-
-cleanup_chroot() {
-    umount "$MOUNT_DIR/dev" 2>/dev/null || true
-    umount "$MOUNT_DIR/proc" 2>/dev/null || true
-    umount "$MOUNT_DIR/sys" 2>/dev/null || true
-}
-trap cleanup_chroot EXIT
-
-# Configure zypper repos
-cat > "$MOUNT_DIR/etc/zypp/repos.d/repo-oss.repo" <<EOF
-[repo-oss]
-name=openSUSE Tumbleweed OSS
-enabled=1
-autorefresh=1
-baseurl=https://download.opensuse.org/tumbleweed/repo/oss/
-type=rpm-md
-keeppackages=0
-EOF
-
-# Install kernel, bootloader, and other essentials
-chroot "$MOUNT_DIR" /bin/bash -c "
+# --- Step 3: Install packages via chroot ---
+echo "==> Installing packages..."
+chroot "$ROOTFS_DIR" /bin/bash -c "
 set -euo pipefail
 zypper --non-interactive refresh
 zypper --non-interactive install --no-recommends \
     kernel-default \
     dracut \
-    grub2 \
     systemd \
     systemd-network \
     iproute2 \
@@ -116,42 +67,74 @@ zypper --non-interactive install --no-recommends \
     ca-certificates \
     ca-certificates-mozilla
 "
+echo "    Rootfs size after packages: $(du -sh "$ROOTFS_DIR" | cut -f1)"
 
-# Copy overlay files BEFORE config.sh so systemd units exist
-if [ -d "appliance/root" ]; then
-    echo "Copying overlay files..."
-    cp -a appliance/root/* "$MOUNT_DIR/"
+# --- Step 4: Copy overlay files ---
+if [ -d "$SCRIPT_DIR/root" ]; then
+    echo "==> Copying overlay files..."
+    cp -a "$SCRIPT_DIR/root"/* "$ROOTFS_DIR/"
 fi
 
-# Run config.sh customization script if it exists
-if [ -f "appliance/config.sh" ]; then
-    echo "Running config.sh customization..."
-    cp appliance/config.sh "$MOUNT_DIR/config.sh"
-    chmod +x "$MOUNT_DIR/config.sh"
-    chroot "$MOUNT_DIR" /config.sh
-    rm "$MOUNT_DIR/config.sh"
+# --- Step 5: Run config.sh ---
+if [ -f "$SCRIPT_DIR/config.sh" ]; then
+    echo "==> Running config.sh..."
+    cp "$SCRIPT_DIR/config.sh" "$ROOTFS_DIR/config.sh"
+    chmod +x "$ROOTFS_DIR/config.sh"
+    chroot "$ROOTFS_DIR" /config.sh
+    rm "$ROOTFS_DIR/config.sh"
 fi
 
-# Install bootloader
-echo "Installing GRUB..."
-chroot "$MOUNT_DIR" grub2-install --target=i386-pc "$NBD_DEVICE"
-chroot "$MOUNT_DIR" grub2-mkconfig -o /boot/grub2/grub.cfg
-
-# Set up fstab
-echo "Configuring fstab..."
-cat > "$MOUNT_DIR/etc/fstab" <<EOF
+# --- Step 6: Set up fstab and boot config ---
+echo "==> Configuring boot..."
+cat > "$ROOTFS_DIR/etc/fstab" <<EOF
 /dev/vda1  /  ext4  defaults,noatime  0  1
 EOF
 
-# Clean up package caches
-echo "Cleaning package caches..."
-chroot "$MOUNT_DIR" zypper clean --all || true
+KERNEL_VERSION=$(ls "$ROOTFS_DIR/lib/modules/" | head -1)
+echo "    Kernel: $KERNEL_VERSION"
 
-cleanup_chroot
-cleanup
+# --- Step 7: Clean up rootfs ---
+echo "==> Cleaning up rootfs..."
+chroot "$ROOTFS_DIR" zypper clean --all 2>/dev/null || true
+rm -rf "$ROOTFS_DIR/var/cache/zypp" "$ROOTFS_DIR/var/log/zypp"
+rm -rf "$ROOTFS_DIR/usr/share/man" "$ROOTFS_DIR/usr/share/doc" "$ROOTFS_DIR/usr/share/info"
+rm -rf "$ROOTFS_DIR/tmp/"* "$ROOTFS_DIR/var/tmp/"*
+
+# Unmount chroot bind mounts before creating image
+umount "$ROOTFS_DIR/dev" 2>/dev/null || true
+umount "$ROOTFS_DIR/proc" 2>/dev/null || true
+umount "$ROOTFS_DIR/sys" 2>/dev/null || true
+
+echo "    Final rootfs size: $(du -sh "$ROOTFS_DIR" | cut -f1)"
+
+# --- Step 8: Create disk image ---
+echo "==> Creating raw disk image..."
+
+# Create sparse raw image
+truncate -s "$IMAGE_SIZE" "$RAW_IMAGE"
+
+# Create ext4 filesystem on it (no mount needed!)
+mkfs.ext4 -F -d "$ROOTFS_DIR" "$RAW_IMAGE"
+
+echo "==> Converting to qcow2..."
+qemu-img convert -f raw -O qcow2 -c "$RAW_IMAGE" "$DISK_IMAGE"
+rm -f "$RAW_IMAGE"
+
+# --- Step 9: Extract kernel and initrd for direct boot ---
+echo "==> Extracting kernel and initrd for direct boot..."
+cp "$ROOTFS_DIR/boot/vmlinuz-$KERNEL_VERSION" "$TARGET_DIR/vmlinuz"
+if [ -f "$ROOTFS_DIR/boot/initrd-$KERNEL_VERSION" ]; then
+    cp "$ROOTFS_DIR/boot/initrd-$KERNEL_VERSION" "$TARGET_DIR/initrd"
+else
+    echo "    WARNING: no initrd found, generating..."
+    chroot "$ROOTFS_DIR" dracut --no-hostonly --force --kver "$KERNEL_VERSION" "/boot/initrd" 2>/dev/null || true
+    cp "$ROOTFS_DIR/boot/initrd" "$TARGET_DIR/initrd" 2>/dev/null || echo "    WARNING: initrd generation failed (expected in container)"
+fi
 
 echo
 echo "Build complete!"
-echo "Image: $DISK_IMAGE"
-ls -lh "$DISK_IMAGE"
+echo "  Image:  $DISK_IMAGE"
+echo "  Kernel: $TARGET_DIR/vmlinuz"
+ls -lh "$DISK_IMAGE" "$TARGET_DIR/vmlinuz"
+[ -f "$TARGET_DIR/initrd" ] && ls -lh "$TARGET_DIR/initrd"
 qemu-img info "$DISK_IMAGE"

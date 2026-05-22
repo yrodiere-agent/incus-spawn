@@ -32,14 +32,14 @@ jobs:
         id: cache
         uses: actions/cache/restore@v4
         with:
-          path: appliance/build/incus-spawn-appliance.qcow2
+          path: appliance/build/
           key: ${{ steps.cache-key.outputs.key }}
 
       - name: Install build dependencies
         if: steps.cache.outputs.cache-hit != 'true'
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq qemu-utils parted podman
+          sudo apt-get install -y -qq qemu-utils podman
 
       - name: Build appliance image
         if: steps.cache.outputs.cache-hit != 'true'
@@ -47,19 +47,19 @@ jobs:
 
       - name: Report image size
         run: |
-          ls -lh appliance/build/incus-spawn-appliance.qcow2
+          ls -lh appliance/build/
           qemu-img info appliance/build/incus-spawn-appliance.qcow2
 
       - name: Cache built image
         if: steps.cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
-          path: appliance/build/incus-spawn-appliance.qcow2
+          path: appliance/build/
           key: ${{ steps.cache-key.outputs.key }}
 
       - name: Upload as artifact
         uses: actions/upload-artifact@v4
         with:
           name: appliance-image
-          path: appliance/build/incus-spawn-appliance.qcow2
+          path: appliance/build/
           retention-days: 30
