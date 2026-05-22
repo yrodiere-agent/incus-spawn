@@ -69,30 +69,10 @@ if [ -d "$SCRIPT_DIR/root" ]; then
     cp -a "$SCRIPT_DIR/root"/* "$ROOTFS_DIR/"
 fi
 
-# --- Step 5: Run config.sh ---
-if [ -f "$SCRIPT_DIR/config.sh" ]; then
-    echo "==> Running config.sh..."
-    cp "$SCRIPT_DIR/config.sh" "$ROOTFS_DIR/config.sh"
-    chmod +x "$ROOTFS_DIR/config.sh"
-    chroot "$ROOTFS_DIR" /config.sh
-    rm "$ROOTFS_DIR/config.sh"
-fi
-
-# --- Step 6: Boot config ---
-echo "==> Configuring boot..."
-
+# --- Step 5: Extract kernel and initrd (before config.sh strips them) ---
+echo "==> Extracting kernel and initrd..."
 KERNEL_VERSION=$(ls "$ROOTFS_DIR/lib/modules/" | head -1)
 echo "    Kernel: $KERNEL_VERSION"
-
-# --- Step 7: Clean up rootfs ---
-echo "==> Cleaning up rootfs..."
-chroot "$ROOTFS_DIR" zypper clean --all 2>/dev/null || true
-rm -rf "$ROOTFS_DIR/var/cache/zypp" "$ROOTFS_DIR/var/log/zypp"
-rm -rf "$ROOTFS_DIR/usr/share/man" "$ROOTFS_DIR/usr/share/doc" "$ROOTFS_DIR/usr/share/info"
-rm -rf "$ROOTFS_DIR/tmp/"* "$ROOTFS_DIR/var/tmp/"*
-
-# --- Step 8: Extract kernel and initrd before unmounting ---
-echo "==> Extracting kernel and initrd..."
 cp "$ROOTFS_DIR/boot/vmlinuz-$KERNEL_VERSION" "$TARGET_DIR/vmlinuz"
 if [ -f "$ROOTFS_DIR/boot/initrd-$KERNEL_VERSION" ]; then
     cp "$ROOTFS_DIR/boot/initrd-$KERNEL_VERSION" "$TARGET_DIR/initrd"
@@ -101,6 +81,22 @@ else
     chroot "$ROOTFS_DIR" dracut --no-hostonly --force --kver "$KERNEL_VERSION" "/boot/initrd" 2>/dev/null || true
     cp "$ROOTFS_DIR/boot/initrd" "$TARGET_DIR/initrd" 2>/dev/null || echo "    WARNING: initrd generation failed (expected in container)"
 fi
+
+# --- Step 6: Run config.sh (strips boot files, kernel modules, bloat) ---
+if [ -f "$SCRIPT_DIR/config.sh" ]; then
+    echo "==> Running config.sh..."
+    cp "$SCRIPT_DIR/config.sh" "$ROOTFS_DIR/config.sh"
+    chmod +x "$ROOTFS_DIR/config.sh"
+    chroot "$ROOTFS_DIR" /config.sh
+    rm "$ROOTFS_DIR/config.sh"
+fi
+
+# --- Step 7: Clean up rootfs ---
+echo "==> Cleaning up rootfs..."
+chroot "$ROOTFS_DIR" zypper clean --all 2>/dev/null || true
+rm -rf "$ROOTFS_DIR/var/cache/zypp" "$ROOTFS_DIR/var/log/zypp"
+rm -rf "$ROOTFS_DIR/usr/share/man" "$ROOTFS_DIR/usr/share/doc" "$ROOTFS_DIR/usr/share/info"
+rm -rf "$ROOTFS_DIR/tmp/"* "$ROOTFS_DIR/var/tmp/"*
 
 # Unmount chroot bind mounts before creating image
 umount "$ROOTFS_DIR/dev" 2>/dev/null || true

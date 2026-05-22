@@ -80,21 +80,67 @@ rm -rf /var/cache/zypp /var/log/zypp 2>/dev/null || true
 rm -rf /tmp/* /var/tmp/* 2>/dev/null || true
 
 #-- Remove heavy Incus deps not needed for headless container hosting --#
+# Graphics/GPU (pulled in by Incus's QEMU dep)
 rm -f /usr/lib64/libLLVM*.so* 2>/dev/null || true
 rm -f /usr/lib64/libgallium*.so* 2>/dev/null || true
-rm -f /usr/lib64/libvulkan_lvp*.so* 2>/dev/null || true
+rm -f /usr/lib64/libvulkan*.so* 2>/dev/null || true
 rm -f /usr/lib64/libMesa*.so* 2>/dev/null || true
+rm -f /usr/lib64/libSPIRV*.so* 2>/dev/null || true
+rm -f /usr/lib64/libcapstone*.so* 2>/dev/null || true
+rm -f /usr/lib64/libpython*.so* 2>/dev/null || true
 rm -rf /usr/lib64/dri 2>/dev/null || true
-rm -f /usr/bin/qemu-system-* 2>/dev/null || true
-rm -f /usr/bin/qemu-img 2>/dev/null || true
-rm -f /usr/bin/skopeo 2>/dev/null || true
-rm -f /usr/bin/lego 2>/dev/null || true
-rm -rf /usr/share/qemu 2>/dev/null || true
-rm -rf /usr/share/seabios 2>/dev/null || true
-rm -rf /usr/share/ipxe 2>/dev/null || true
+rm -rf /usr/lib64/python* 2>/dev/null || true
+# QEMU tools (Incus uses its own bundled QEMU for VMs, we only run containers)
+rm -f /usr/bin/qemu-system-* /usr/bin/qemu-img /usr/bin/qemu-io 2>/dev/null || true
+rm -f /usr/bin/qemu-nbd /usr/bin/qemu-storage-daemon 2>/dev/null || true
+rm -rf /usr/share/qemu /usr/share/seabios /usr/share/ipxe 2>/dev/null || true
+# Container image tools not needed at runtime
+rm -f /usr/bin/skopeo /usr/bin/lego /usr/bin/umoci 2>/dev/null || true
+# virtiofsd (Incus includes its own)
+rm -f /usr/libexec/virtiofsd 2>/dev/null || true
+# Perl (rpm scriptlet dependency, not needed at runtime)
+rm -f /usr/bin/perl /usr/bin/perl5.* 2>/dev/null || true
+rm -rf /usr/lib/perl5 2>/dev/null || true
 
-#-- Remove initrd from rootfs (it's extracted separately) --#
-rm -f /boot/initrd* 2>/dev/null || true
+#-- Remove boot files from rootfs (extracted separately for direct boot) --#
+rm -f /boot/initrd* /boot/vmlinuz* /boot/System.map* 2>/dev/null || true
+rm -f /usr/lib/modules/*/vmlinuz /usr/lib/modules/*/vmlinux.xz 2>/dev/null || true
+rm -f /usr/lib/modules/*/System.map 2>/dev/null || true
+
+#-- Strip kernel modules: remove drivers not needed in a virtual machine --#
+KVER=$(ls /usr/lib/modules/ | head -1)
+if [ -n "$KVER" ]; then
+    MODDIR="/usr/lib/modules/$KVER/kernel"
+    # GPU/DRM — headless VM, no display
+    rm -rf "$MODDIR/drivers/gpu" 2>/dev/null || true
+    # Sound — no audio in VM
+    rm -rf "$MODDIR/sound" "$MODDIR/drivers/soundwire" 2>/dev/null || true
+    # Wireless/Bluetooth — VM uses virtio-net
+    rm -rf "$MODDIR/drivers/net/wireless" "$MODDIR/net/wireless" 2>/dev/null || true
+    rm -rf "$MODDIR/drivers/bluetooth" "$MODDIR/net/bluetooth" 2>/dev/null || true
+    # USB host controllers — no physical USB in VM
+    rm -rf "$MODDIR/drivers/usb/host" "$MODDIR/drivers/usb/gadget" 2>/dev/null || true
+    rm -rf "$MODDIR/drivers/usb/serial" "$MODDIR/drivers/usb/storage" 2>/dev/null || true
+    # Hardware-specific drivers not relevant in QEMU
+    rm -rf "$MODDIR/drivers/hwmon" "$MODDIR/drivers/iio" 2>/dev/null || true
+    rm -rf "$MODDIR/drivers/media" "$MODDIR/drivers/infiniband" 2>/dev/null || true
+    rm -rf "$MODDIR/drivers/isdn" "$MODDIR/drivers/nfc" 2>/dev/null || true
+    rm -rf "$MODDIR/drivers/w1" "$MODDIR/drivers/comedi" 2>/dev/null || true
+    rm -rf "$MODDIR/drivers/staging" 2>/dev/null || true
+    # Filesystems we don't use
+    rm -rf "$MODDIR/fs/ceph" "$MODDIR/fs/gfs2" "$MODDIR/fs/ocfs2" 2>/dev/null || true
+    rm -rf "$MODDIR/fs/nfs" "$MODDIR/fs/cifs" "$MODDIR/fs/smbfs" 2>/dev/null || true
+    rm -rf "$MODDIR/fs/9p" "$MODDIR/fs/afs" 2>/dev/null || true
+    # Rebuild module dependency index
+    depmod "$KVER" 2>/dev/null || true
+fi
+
+#-- Remove udev hardware databases (VM doesn't need hardware detection) --#
+rm -f /usr/lib/udev/hwdb.d/20-pci-*.hwdb 2>/dev/null || true
+rm -f /usr/lib/udev/hwdb.d/20-OUI.hwdb 2>/dev/null || true
+rm -f /usr/lib/udev/hwdb.d/20-usb-*.hwdb 2>/dev/null || true
+rm -f /usr/lib/udev/hwdb.d/20-bluetooth*.hwdb 2>/dev/null || true
+rm -f /usr/share/file/magic.mgc 2>/dev/null || true
 
 #-- Remove package manager for immutable appliance --#
 rm -f /usr/bin/zypper /usr/bin/rpm 2>/dev/null || true
