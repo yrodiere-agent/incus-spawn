@@ -125,10 +125,10 @@ fi
 # Run config.sh customization script if it exists
 if [ -f "appliance/config.sh" ]; then
     echo "Running config.sh customization..."
-    cp appliance/config.sh "$MOUNT_DIR/tmp/config.sh"
-    chmod +x "$MOUNT_DIR/tmp/config.sh"
-    chroot "$MOUNT_DIR" /tmp/config.sh
-    rm "$MOUNT_DIR/tmp/config.sh"
+    cp appliance/config.sh "$MOUNT_DIR/config.sh"
+    chmod +x "$MOUNT_DIR/config.sh"
+    chroot "$MOUNT_DIR" /config.sh
+    rm "$MOUNT_DIR/config.sh"
 fi
 
 # Install bootloader
