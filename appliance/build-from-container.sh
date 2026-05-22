@@ -76,6 +76,9 @@ mount --bind /dev "$MOUNT_DIR/dev"
 mount --bind /proc "$MOUNT_DIR/proc"
 mount --bind /sys "$MOUNT_DIR/sys"
 
+# Copy DNS configuration for network access in chroot
+cp /etc/resolv.conf "$MOUNT_DIR/etc/resolv.conf"
+
 cleanup_chroot() {
     umount "$MOUNT_DIR/dev" 2>/dev/null || true
     umount "$MOUNT_DIR/proc" 2>/dev/null || true
