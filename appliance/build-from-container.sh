@@ -133,7 +133,7 @@ fi
 
 # Install bootloader
 echo "Installing GRUB..."
-chroot "$MOUNT_DIR" grub2-install "$NBD_DEVICE"
+chroot "$MOUNT_DIR" grub2-install --target=i386-pc "$NBD_DEVICE"
 chroot "$MOUNT_DIR" grub2-mkconfig -o /boot/grub2/grub.cfg
 
 # Set up fstab
