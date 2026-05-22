@@ -131,6 +131,10 @@ else
     cp "$ROOTFS_DIR/boot/initrd" "$TARGET_DIR/initrd" 2>/dev/null || echo "    WARNING: initrd generation failed (expected in container)"
 fi
 
+# Ensure all output files are readable
+chmod 644 "$DISK_IMAGE" "$TARGET_DIR/vmlinuz"
+[ -f "$TARGET_DIR/initrd" ] && chmod 644 "$TARGET_DIR/initrd"
+
 echo
 echo "Build complete!"
 echo "  Image:  $DISK_IMAGE"
