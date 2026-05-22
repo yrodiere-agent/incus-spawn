@@ -79,11 +79,34 @@ rm -rf /usr/share/locale/* 2>/dev/null || true
 rm -rf /var/cache/zypp /var/log/zypp 2>/dev/null || true
 rm -rf /tmp/* /var/tmp/* 2>/dev/null || true
 
+#-- Remove heavy Incus deps not needed for headless container hosting --#
+rm -f /usr/lib64/libLLVM*.so* 2>/dev/null || true
+rm -f /usr/lib64/libgallium*.so* 2>/dev/null || true
+rm -f /usr/lib64/libvulkan_lvp*.so* 2>/dev/null || true
+rm -f /usr/lib64/libMesa*.so* 2>/dev/null || true
+rm -rf /usr/lib64/dri 2>/dev/null || true
+rm -f /usr/bin/qemu-system-* 2>/dev/null || true
+rm -f /usr/bin/qemu-img 2>/dev/null || true
+rm -f /usr/bin/skopeo 2>/dev/null || true
+rm -f /usr/bin/lego 2>/dev/null || true
+rm -rf /usr/share/qemu 2>/dev/null || true
+rm -rf /usr/share/seabios 2>/dev/null || true
+rm -rf /usr/share/ipxe 2>/dev/null || true
+
+#-- Remove initrd from rootfs (it's extracted separately) --#
+rm -f /boot/initrd* 2>/dev/null || true
+
 #-- Remove package manager for immutable appliance --#
-# KIWI's <packages type="uninstall"> fails, so remove manually
 rm -f /usr/bin/zypper /usr/bin/rpm 2>/dev/null || true
 rm -rf /usr/lib*/libzypp* /usr/lib*/librpm* 2>/dev/null || true
 rm -rf /usr/share/zypper 2>/dev/null || true
+rm -rf /usr/lib/sysimage/rpm 2>/dev/null || true
+
+#-- Dracut: ensure squashfs + overlay modules are in the initrd --#
+mkdir -p /etc/dracut.conf.d
+cat > /etc/dracut.conf.d/squashfs.conf << 'EOF'
+add_drivers+=" squashfs overlay "
+EOF
 
 #-- Set default locale --#
 echo 'LANG=C.UTF-8' > /etc/locale.conf
