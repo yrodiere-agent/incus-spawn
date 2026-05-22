@@ -46,10 +46,11 @@ qemu-nbd --connect="$NBD_DEVICE" "$DISK_IMAGE"
 # Wait for device
 sleep 1
 
-# Create partition table and partition
+# Create partition table and partition (MBR for simpler GRUB installation)
 echo "Creating partition table..."
-parted -s "$NBD_DEVICE" mklabel gpt
+parted -s "$NBD_DEVICE" mklabel msdos
 parted -s "$NBD_DEVICE" mkpart primary ext4 1MiB 100%
+parted -s "$NBD_DEVICE" set 1 boot on
 
 # Wait for partition device
 sleep 1
