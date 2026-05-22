@@ -39,12 +39,11 @@ jobs:
         if: steps.cache.outputs.cache-hit != 'true'
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq zypper qemu-utils
-          sudo pip install kiwi==10.0.0
+          sudo apt-get install -y -qq qemu-utils parted podman
 
       - name: Build appliance image
         if: steps.cache.outputs.cache-hit != 'true'
-        run: sudo appliance/build.sh --target-dir appliance/build
+        run: sudo appliance/build-from-container.sh appliance/build 2G
 
       - name: Report image size
         run: |
