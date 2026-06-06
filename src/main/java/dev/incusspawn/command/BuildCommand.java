@@ -414,9 +414,7 @@ public class BuildCommand extends BaseCommand {
      * is built first (recursively).
      */
     private void build(ImageDef imageDef, Map<String, ImageDef> defs) {
-        var targetName = imageDef.getName();
-
-        // Check that required credentials are configured before starting a potentially long build
+        // Check credentials and proxy once before the recursive parent chain
         var credentialError = SpawnConfig.checkCredentials(imageDef, defs, incus::exists);
         if (!credentialError.isEmpty()) {
             System.err.println("Error: " + credentialError);
@@ -425,7 +423,10 @@ public class BuildCommand extends BaseCommand {
 
         ProxyHealthCheck.requireProxy(incus);
 
-        // If this image has a parent, ensure it exists and is up-to-date
+        buildChain(imageDef, defs);
+    }
+
+    private void buildChain(ImageDef imageDef, Map<String, ImageDef> defs) {
         if (!imageDef.isRoot()) {
             var parentName = imageDef.getParent();
             var parentDef = defs.get(parentName);
@@ -443,7 +444,7 @@ public class BuildCommand extends BaseCommand {
                 } else {
                     System.out.println("Parent image '" + parentName + "' is outdated, rebuilding it first...\n");
                 }
-                build(parentDef, defs);
+                buildChain(parentDef, defs);
                 System.out.println();
             }
         }
