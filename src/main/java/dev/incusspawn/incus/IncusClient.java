@@ -144,7 +144,7 @@ public class IncusClient {
                 // Container may not be Running yet — treat any exec failure as not-ready and retry.
             }
             try {
-                Thread.sleep(1000);
+                Thread.sleep(200);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 break;
@@ -154,7 +154,7 @@ public class IncusClient {
     }
 
     public void waitForReady(String name) {
-        pollUntilReady(name, 30, "true");
+        pollUntilReady(name, 150, "echo", "ready");
     }
 
     /**
