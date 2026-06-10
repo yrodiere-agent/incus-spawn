@@ -58,7 +58,17 @@ class IncusApi {
             try {
                 var http = new IncusApi(httpsTransport);
                 if (http.get("/1.0").isSuccess()) return http;
-            } catch (IncusException ignored) {}
+            } catch (IncusException e) {
+                if (hasSslHandshakeError(e) && HttpsTransport.clearCachedServerCerts()) {
+                    httpsTransport = HttpsTransport.fromClientConfig();
+                    if (httpsTransport != null) {
+                        try {
+                            var http = new IncusApi(httpsTransport);
+                            if (http.get("/1.0").isSuccess()) return http;
+                        } catch (IncusException ignored) {}
+                    }
+                }
+            }
         }
         return null;
     }
@@ -104,6 +114,15 @@ class IncusApi {
         // No socket file found — check if HTTPS was attempted
         var httpsTransport = HttpsTransport.fromClientConfig();
         if (httpsTransport != null) {
+            try {
+                new IncusApi(httpsTransport).get("/1.0");
+            } catch (IncusException e) {
+                if (hasSslHandshakeError(e) && HttpsTransport.clearCachedServerCerts()) {
+                    return "HTTPS remote configured but TLS handshake failed.\n\n" +
+                           "The VM's server certificate changed (e.g. after a fresh data disk).\n" +
+                           "Stale certificates have been cleared — please retry.";
+                }
+            }
             return "HTTPS remote configured but connection failed.\n\n" +
                    "The VM may not trust the current client certificate.\n" +
                    "Re-run 'isx init' to regenerate and trust certificates.";
@@ -594,6 +613,18 @@ class IncusApi {
                 throw e;
             }
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <T extends Throwable> T findCause(Throwable t, Class<T> type) {
+        for (var c = t; c != null; c = c.getCause()) {
+            if (type.isInstance(c)) return (T) c;
+        }
+        return null;
+    }
+
+    private static boolean hasSslHandshakeError(Throwable t) {
+        return findCause(t, javax.net.ssl.SSLHandshakeException.class) != null;
     }
 
     private static boolean isTransientExecError(IncusException e) {

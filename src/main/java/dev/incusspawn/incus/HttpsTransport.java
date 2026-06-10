@@ -1,6 +1,7 @@
 package dev.incusspawn.incus;
 
 import com.fasterxml.jackson.dataformat.yaml.YAMLMapper;
+import dev.incusspawn.Environment;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -70,6 +71,22 @@ class HttpsTransport implements IncusTransport {
             } catch (Exception ignored) {}
         }
         return null;
+    }
+
+    static boolean clearCachedServerCerts() {
+        var serverCertsDir = Environment.incusServerCertsDir();
+        if (!Files.exists(serverCertsDir)) return false;
+        boolean cleared = false;
+        try (var stream = Files.list(serverCertsDir)) {
+            for (var cert : stream.filter(p -> p.toString().endsWith(".crt")).toList()) {
+                Files.deleteIfExists(cert);
+                cleared = true;
+            }
+        } catch (IOException ignored) {}
+        if (cleared) {
+            System.err.println("Cleared stale Incus server certificates (VM cert changed).");
+        }
+        return cleared;
     }
 
     private static SSLContext buildSslContext(Path certDir, String serverAddr) {
