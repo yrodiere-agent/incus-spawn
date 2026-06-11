@@ -43,8 +43,8 @@ public final class HostResourceSetup {
         return source;
     }
 
-    public static void addShiftIfSupported(java.util.List<String> args) {
-        if (!Environment.isMacOS()) args.add("shift=true");
+    public static void addShiftIfSupported(java.util.List<String> args, boolean isVm) {
+        if (!isVm && !Environment.isMacOS()) args.add("shift=true");
     }
 
     public static String translateForVm(String hostPath) {
@@ -108,12 +108,13 @@ public final class HostResourceSetup {
         return new ArrayList<>(result.values());
     }
 
-    public static void applyForBuild(IncusClient incus, Container container, List<ImageDef.HostResource> resources) {
+    public static void applyForBuild(IncusClient incus, Container container, List<ImageDef.HostResource> resources,
+                                      boolean isVm) {
         var overlayEntries = new ArrayList<ImageDef.HostResource>();
         for (var hr : resources) {
-            switch (hr.getMode()) {
+            switch (effectiveMode(hr, isVm)) {
                 case "copy" -> applyCopy(container, hr);
-                case "readonly" -> applyReadonly(incus, container.name(), hr);
+                case "readonly" -> applyReadonly(incus, container.name(), hr, isVm);
                 case "overlay" -> {
                     if (Environment.isMacOS()) {
                         throw new IllegalStateException(
@@ -122,7 +123,7 @@ public final class HostResourceSetup {
                                 + "  or remove the host-resource entry to skip it entirely.\n"
                                 + "  Tracking: https://github.com/Sanne/incus-spawn/issues/157");
                     }
-                    applyOverlay(incus, container, hr);
+                    applyOverlay(incus, container, hr, isVm);
                     overlayEntries.add(hr);
                 }
                 default -> System.err.println("Warning: unknown host-resource mode '" + hr.getMode()
@@ -151,12 +152,13 @@ public final class HostResourceSetup {
         }
     }
 
-    public static void applyForInstance(IncusClient incus, String container, List<ImageDef.HostResource> resources) {
+    public static void applyForInstance(IncusClient incus, String container, List<ImageDef.HostResource> resources,
+                                        boolean isVm) {
         for (var hr : resources) {
-            switch (hr.getMode()) {
+            switch (effectiveMode(hr, isVm)) {
                 case "readonly" -> {
                     removeExistingDevice(incus, container, deviceNameForMode(hr));
-                    applyReadonly(incus, container, hr);
+                    applyReadonly(incus, container, hr, isVm);
                 }
                 case "overlay" -> {
                     if (Environment.isMacOS()) {
@@ -167,7 +169,7 @@ public final class HostResourceSetup {
                                 + "  Tracking: https://github.com/Sanne/incus-spawn/issues/157");
                     }
                     removeExistingDevice(incus, container, deviceNameForMode(hr));
-                    applyOverlayDevice(incus, container, hr);
+                    applyOverlayDevice(incus, container, hr, isVm);
                 }
                 case "copy" -> {} // already baked into the template
             }
@@ -211,6 +213,20 @@ public final class HostResourceSetup {
         }
     }
 
+    /**
+     * VMs cannot mount individual files as disk devices (only directories).
+     * Fall back to copy mode for file-level readonly/overlay host resources.
+     */
+    private static String effectiveMode(ImageDef.HostResource hr, boolean isVm) {
+        if (!isVm || "copy".equals(hr.getMode())) return hr.getMode();
+        var expandedSource = expandHostTilde(hr.getSource());
+        if (Files.exists(Path.of(expandedSource)) && !Files.isDirectory(Path.of(expandedSource))) {
+            System.out.println("  VM: falling back to copy mode for file " + hr.getSource());
+            return "copy";
+        }
+        return hr.getMode();
+    }
+
     // --- Private helpers ---
 
     private static void applyCopy(Container container, ImageDef.HostResource hr) {
@@ -248,7 +264,7 @@ public final class HostResourceSetup {
         }
     }
 
-    private static void applyReadonly(IncusClient incus, String container, ImageDef.HostResource hr) {
+    private static void applyReadonly(IncusClient incus, String container, ImageDef.HostResource hr, boolean isVm) {
         var expandedSource = expandHostTilde(hr.getSource());
         if (!Files.exists(Path.of(expandedSource))) {
             System.err.println("Warning: host-resource source not found: " + hr.getSource() + " (skipping)");
@@ -260,12 +276,12 @@ public final class HostResourceSetup {
                 "source=" + translateForVm(expandedSource),
                 "path=" + containerPath,
                 "readonly=true"));
-        addShiftIfSupported(args);
+        addShiftIfSupported(args, isVm);
         incus.deviceAdd(container, devName, "disk", args.toArray(String[]::new));
         System.out.println("  Mounted " + hr.getSource() + " -> " + containerPath + " (readonly)");
     }
 
-    private static void applyOverlay(IncusClient incus, Container container, ImageDef.HostResource hr) {
+    private static void applyOverlay(IncusClient incus, Container container, ImageDef.HostResource hr, boolean isVm) {
         var containerPath = resolveContainerPath(hr.getSource(), hr.getPath());
         var oDir = overlayDir(containerPath);
         var lowerDir = oDir + "/lower";
@@ -282,7 +298,7 @@ public final class HostResourceSetup {
                 "source=" + translateForVm(expandedSource),
                 "path=" + lowerDir,
                 "readonly=true"));
-        addShiftIfSupported(overlayArgs);
+        addShiftIfSupported(overlayArgs, isVm);
         incus.deviceAdd(container.name(), overlayDeviceName(containerPath), "disk",
                 overlayArgs.toArray(String[]::new));
 
@@ -296,7 +312,8 @@ public final class HostResourceSetup {
         System.out.println("  Mounted " + hr.getSource() + " -> " + containerPath + " (overlay)");
     }
 
-    private static void applyOverlayDevice(IncusClient incus, String container, ImageDef.HostResource hr) {
+    private static void applyOverlayDevice(IncusClient incus, String container, ImageDef.HostResource hr,
+                                            boolean isVm) {
         var containerPath = resolveContainerPath(hr.getSource(), hr.getPath());
         var lowerDir = overlayDir(containerPath) + "/lower";
 
@@ -310,7 +327,7 @@ public final class HostResourceSetup {
                 "source=" + translateForVm(expandedSource),
                 "path=" + lowerDir,
                 "readonly=true"));
-        addShiftIfSupported(devArgs);
+        addShiftIfSupported(devArgs, isVm);
         incus.deviceAdd(container, overlayDeviceName(containerPath), "disk",
                 devArgs.toArray(String[]::new));
     }

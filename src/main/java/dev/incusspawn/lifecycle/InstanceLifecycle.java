@@ -61,7 +61,7 @@ public final class InstanceLifecycle {
         var hostResources = HostResourceSetup.deserialize(hrJson);
         if (!hostResources.isEmpty()) {
             System.out.println("Applying host-resource devices...");
-            HostResourceSetup.applyForInstance(incus, name, hostResources);
+            HostResourceSetup.applyForInstance(incus, name, hostResources, incus.isVm(name));
         }
 
         if (instanceType == InstanceType.INSTANCE) {

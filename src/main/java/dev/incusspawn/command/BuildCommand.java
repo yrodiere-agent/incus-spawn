@@ -618,6 +618,7 @@ public class BuildCommand extends BaseCommand {
                                   String buildName, String parentSource) {
         var canonicalName = imageDef.getName();
         var parentCanonical = imageDef.getParent();
+        var effectiveVm = effectiveVm(imageDef);
 
         System.out.println("Deriving from parent image '" + parentCanonical + "'...");
         incus.copy(parentSource, buildName);
@@ -634,7 +635,7 @@ public class BuildCommand extends BaseCommand {
 
         waitForNetwork(buildName);
 
-        mountDnfCache(buildName);
+        mountDnfCache(buildName, effectiveVm);
         var container = new Container(incus, buildName);
 
         container.sh("sed -i \"s/^export ISX_TEMPLATE=.*/export ISX_TEMPLATE='" + canonicalName + "'/\" /home/agentuser/.bashrc")
@@ -643,7 +644,7 @@ public class BuildCommand extends BaseCommand {
         var hostResources = HostResourceSetup.collectEffective(imageDef, defs);
         if (!hostResources.isEmpty()) {
             System.out.println("Applying host-resources...");
-            HostResourceSetup.applyForBuild(incus, container, hostResources);
+            HostResourceSetup.applyForBuild(incus, container, hostResources, effectiveVm);
         }
 
         removePackages(container, imageDef);
@@ -654,7 +655,7 @@ public class BuildCommand extends BaseCommand {
         runToolSetup(container, toolResolution.effective());
         maskServices(container, imageDef);
         installSkills(container, imageDef, defs);
-        cloneRepos(container, imageDef);
+        cloneRepos(container, imageDef, effectiveVm);
         updateClaudeJsonTrust(container, imageDef);
 
         HostResourceSetup.removeBuildDevices(incus, buildName, hostResources);
@@ -747,7 +748,7 @@ public class BuildCommand extends BaseCommand {
 
         waitForNetwork(buildName);
 
-        mountDnfCache(buildName);
+        mountDnfCache(buildName, effectiveVm);
 
         System.out.println("Updating system packages...");
         container.runInteractive("Failed to update system packages",
@@ -793,7 +794,7 @@ public class BuildCommand extends BaseCommand {
         var hostResources = HostResourceSetup.collectEffective(imageDef, defs);
         if (!hostResources.isEmpty()) {
             System.out.println("Applying host-resources...");
-            HostResourceSetup.applyForBuild(incus, container, hostResources);
+            HostResourceSetup.applyForBuild(incus, container, hostResources, effectiveVm);
         }
 
         // Build the full ancestor chain (root first) so that each layer's
@@ -816,7 +817,7 @@ public class BuildCommand extends BaseCommand {
             runToolSetup(container, toolResolution.effective());
             maskServices(container, layer);
             installSkills(container, layer, defs);
-            cloneRepos(container, layer);
+            cloneRepos(container, layer, effectiveVm);
             updateClaudeJsonTrust(container, layer);
         }
 
@@ -1266,8 +1267,9 @@ public class BuildCommand extends BaseCommand {
      * metadata and downloaded packages across builds, avoiding redundant
      * downloads when building a parent→child image chain.
      */
-    private void mountDnfCache(String container) {
+    private void mountDnfCache(String container, boolean isVm) {
         if (!Environment.isLinux()) return;
+        if (isVm) return;
         try {
             Files.createDirectories(dnfCacheDir());
         } catch (IOException e) {
@@ -1526,7 +1528,7 @@ public class BuildCommand extends BaseCommand {
      * alternates removal makes the clone self-contained while the reference device
      * is still mounted.
      */
-    void cloneRepos(Container container, ImageDef imageDef) {
+    void cloneRepos(Container container, ImageDef imageDef, boolean isVm) {
         var config = SpawnConfig.load();
 
         for (var repo : imageDef.getRepos()) {
@@ -1536,7 +1538,7 @@ public class BuildCommand extends BaseCommand {
             RepoReference ref = null;
 
             try {
-                ref = tryMountReference(container, repo.getUrl(), config);
+                ref = tryMountReference(container, repo.getUrl(), config, isVm);
                 if (ref != null) {
                     System.out.println("  \033[1;32mUsing local host reference to speed up clone...\033[0m");
                     try {
@@ -1608,7 +1610,7 @@ public class BuildCommand extends BaseCommand {
         return cmd.toString();
     }
 
-    RepoReference tryMountReference(Container container, String cloneUrl, SpawnConfig config) {
+    RepoReference tryMountReference(Container container, String cloneUrl, SpawnConfig config, boolean isVm) {
         try {
             var repoName = GitRemoteUtils.repoNameFromUrl(cloneUrl);
             if (repoName.isEmpty()) return null;
@@ -1636,7 +1638,7 @@ public class BuildCommand extends BaseCommand {
                     "source=" + HostResourceSetup.translateForVm(hostPath.toString()),
                     "path=" + containerPath,
                     "readonly=true"));
-            HostResourceSetup.addShiftIfSupported(refArgs);
+            HostResourceSetup.addShiftIfSupported(refArgs, isVm);
             incus.deviceAdd(container.name(), deviceName, "disk", refArgs.toArray(String[]::new));
 
             return new RepoReference(deviceName, containerPath);
