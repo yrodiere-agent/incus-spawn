@@ -1010,6 +1010,12 @@ public class IncusClient {
         return resp.body().path("metadata").path("status").asText("");
     }
 
+    public boolean isVm(String name) {
+        var resp = http().get("/1.0/instances/" + name);
+        if (!resp.isSuccess()) return false;
+        return "virtual-machine".equals(resp.body().path("metadata").path("type").asText(""));
+    }
+
     /**
      * Get a specific config value. Returns empty string if the key is not set.
      */

@@ -92,6 +92,7 @@ public class ImageDef {
     @JsonProperty("mask_services")
     private List<String> maskServices = List.of();
     private boolean gui;
+    private boolean vm;
     private String workdir;
     @JsonProperty("shell-command")
     private String shellCommand;
@@ -125,6 +126,8 @@ public class ImageDef {
     public void setMaskServices(List<String> maskServices) { this.maskServices = maskServices; }
     public boolean isGui() { return gui; }
     public void setGui(boolean gui) { this.gui = gui; }
+    public boolean isVm() { return vm; }
+    public void setVm(boolean vm) { this.vm = vm; }
     public String getWorkdir() { return workdir; }
     public void setWorkdir(String workdir) { this.workdir = workdir; }
     public String getShellCommand() { return shellCommand; }
@@ -304,6 +307,7 @@ public class ImageDef {
                     .append(',').append(hr.getMode()).append('\n');
         }
         if (gui) sb.append("gui=true\n");
+        if (vm) sb.append("vm=true\n");
         if (workdir != null && !workdir.isEmpty()) sb.append("workdir=").append(workdir).append('\n');
         if (shellCommand != null && !shellCommand.isEmpty()) sb.append("shell-command=").append(shellCommand).append('\n');
         return sha256hex(sb.toString());

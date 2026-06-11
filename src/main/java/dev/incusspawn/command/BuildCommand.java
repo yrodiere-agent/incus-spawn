@@ -76,8 +76,11 @@ public class BuildCommand extends BaseCommand {
     @Option(name = "missing", hasValue = false, description = "Build only templates that don't exist yet")
     boolean missing;
 
-    @Option(name = "vm", hasValue = false, description = "Build as a VM instead of a container")
+    @Option(name = "vm", hasValue = false, description = "Build as a VM instead of a container (overrides image definition)")
     boolean vm;
+
+    @Option(name = "no-vm", hasValue = false, description = "Build as a container even if the image definition specifies vm: true")
+    boolean noVm;
 
     @Option(name = "yes", hasValue = false, description = "Skip interactive confirmations (for TUI integration)")
     boolean yes;
@@ -483,7 +486,9 @@ public class BuildCommand extends BaseCommand {
         activeBuild = new String[]{tempName, canonicalName};
 
         try {
-            if (imageDef.isRoot()) {
+            boolean typeChange = !imageDef.isRoot()
+                    && effectiveVm(imageDef) != incus.isVm(imageDef.getParent());
+            if (imageDef.isRoot() || typeChange) {
                 buildFromScratch(imageDef, defs, tempName);
             } else {
                 buildFromParent(imageDef, defs, tempName, imageDef.getParent());
@@ -670,14 +675,21 @@ public class BuildCommand extends BaseCommand {
      * This is the full setup path: DNS, user, packages, tools.
      * @param buildName the Incus container name to create (may be a temp name)
      */
+    private boolean effectiveVm(ImageDef imageDef) {
+        return vm ? true : noVm ? false : imageDef.isVm();
+    }
+
     private void buildFromScratch(ImageDef imageDef, Map<String, ImageDef> defs, String buildName) {
         var canonicalName = imageDef.getName();
-        var image = imageDef.getImage();
+        var ancestors = ImageDef.ancestors(imageDef, defs);
+        var rootDef = ancestors.isEmpty() ? imageDef : ancestors.get(ancestors.size() - 1);
+        var image = rootDef.getImage();
+        var effectiveVm = effectiveVm(imageDef);
 
         // Launch base image
-        System.out.println("Launching " + image + "...");
+        System.out.println("Launching " + image + (effectiveVm ? " (VM)..." : "..."));
         try {
-            incus.launch(image, buildName, vm);
+            incus.launch(image, buildName, effectiveVm);
         } catch (IncusException e) {
             if (incus.exists(buildName)) {
                 var log = incus.getLog(buildName);
@@ -708,18 +720,17 @@ public class BuildCommand extends BaseCommand {
         container.exec("update-ca-trust")
                 .assertSuccess("Failed to update CA trust");
 
-        // UID mapping for Wayland passthrough, nested containers, and no dropped
-        // capabilities since the container itself is the security boundary.
-        // mknod intercept is NOT enabled: the seccomp_notify handler causes
-        // per-container lock contention during startup, adding 5+ seconds to
-        // every exec call while systemd-tmpfiles processes device nodes.
-        // Podman uses fuse-overlayfs instead of native mknod-based whiteouts.
-        incus.configSet(buildName, "raw.idmap", "both 1000 1000");
-        incus.configSet(buildName, "security.nesting", "true");
-        if (Environment.isLinux()) {
-            incus.configSet(buildName, "security.syscalls.intercept.setxattr", "true");
+        // Container-only security tweaks: UID mapping, nesting, capability
+        // retention, and setxattr interception. VMs run a full kernel and
+        // don't need any of these.
+        if (!effectiveVm) {
+            incus.configSet(buildName, "raw.idmap", "both 1000 1000");
+            incus.configSet(buildName, "security.nesting", "true");
+            if (Environment.isLinux()) {
+                incus.configSet(buildName, "security.syscalls.intercept.setxattr", "true");
+            }
+            incus.configSet(buildName, "raw.lxc", "lxc.cap.drop =");
         }
-        incus.configSet(buildName, "raw.lxc", "lxc.cap.drop =");
         incus.restart(buildName);
         incus.waitForSystemd(buildName);
 
@@ -738,8 +749,6 @@ public class BuildCommand extends BaseCommand {
 
         mountDnfCache(buildName);
 
-        removePackages(container, imageDef);
-
         System.out.println("Updating system packages...");
         container.runInteractive("Failed to update system packages",
                 "dnf", "-y", "--setopt=keepcache=true", "upgrade", "--refresh");
@@ -753,8 +762,6 @@ public class BuildCommand extends BaseCommand {
                 "systemctl mask systemd-resolved 2>/dev/null; " +
                 "sed -i 's/resolve \\[!UNAVAIL=return\\] //' /etc/nsswitch.conf")
                 .assertSuccess("Failed to finalize DNS configuration");
-
-        maskServices(container, imageDef);
 
         System.out.println("Creating agentuser...");
         container.exec("useradd", "-m", "-u", "1000", "-G", "systemd-journal", "agentuser")
@@ -789,20 +796,37 @@ public class BuildCommand extends BaseCommand {
             HostResourceSetup.applyForBuild(incus, container, hostResources);
         }
 
-        var tools = resolveTools(imageDef);
-        enablePackageRepos(container, imageDef, tools, List.of(), defs);
-        installAllPackages(container, imageDef, tools, List.of(), defs);
-        runToolSetup(container, tools);
-        installSkills(container, imageDef, defs);
-        cloneRepos(container, imageDef);
-        updateClaudeJsonTrust(container, imageDef);
+        // Build the full ancestor chain (root first) so that each layer's
+        // packages, tools, repos, and skills are applied in order. For root
+        // images this list contains only imageDef itself.
+        var chain = new ArrayList<ImageDef>();
+        for (int i = ancestors.size() - 1; i >= 0; i--) {
+            chain.add(ancestors.get(i));
+        }
+        chain.add(imageDef);
+
+        for (var layer : chain) {
+            if (chain.size() > 1) {
+                System.out.println("\nApplying layer: " + layer.getName());
+            }
+            removePackages(container, layer);
+            var toolResolution = collectEffectiveTools(layer, defs);
+            enablePackageRepos(container, layer, toolResolution.effective(), toolResolution.ancestors(), defs);
+            installAllPackages(container, layer, toolResolution.effective(), toolResolution.ancestors(), defs);
+            runToolSetup(container, toolResolution.effective());
+            maskServices(container, layer);
+            installSkills(container, layer, defs);
+            cloneRepos(container, layer);
+            updateClaudeJsonTrust(container, layer);
+        }
 
         HostResourceSetup.removeBuildDevices(incus, buildName, hostResources);
         unmountDnfCache(buildName);
 
         cleanCaches(buildName);
 
-        tagTemplateMetadata(buildName, canonicalName, imageDef, null, hostResources, defs);
+        var parentCanonical = imageDef.isRoot() ? null : imageDef.getParent();
+        tagTemplateMetadata(buildName, canonicalName, imageDef, parentCanonical, hostResources, defs);
 
         System.out.println("Stopping image...");
         incus.stop(buildName);
