@@ -21,6 +21,9 @@ public interface ToolSetup {
     /** Other tools that must be installed before this one. */
     default java.util.List<String> requires() { return java.util.List.of(); }
 
+    /** Paths to preserve across rebase (tilde-prefixed, e.g. {@code ~/.claude}). */
+    default java.util.List<String> preserve() { return java.util.List.of(); }
+
     /**
      * Parameter definitions for this tool. Returns an empty map by default.
      * Tools can override this to declare parameters with validation rules.

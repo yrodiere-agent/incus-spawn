@@ -54,6 +54,7 @@ public class ToolDef {
     @JsonProperty("package_repos")
     private List<ImageDef.PackageRepo> packageRepos = List.of();
     private Map<String, ParameterDef> parameters = Map.of();
+    private List<String> preserve = List.of();
 
     private transient volatile String cachedFingerprint;
 
@@ -86,6 +87,10 @@ public class ToolDef {
     public Map<String, ParameterDef> getParameters() { return parameters; }
     public void setParameters(Map<String, ParameterDef> parameters) {
         this.parameters = parameters != null ? parameters : Map.of();
+    }
+    public List<String> getPreserve() { return preserve; }
+    public void setPreserve(List<String> preserve) {
+        this.preserve = preserve != null ? preserve : List.of();
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)

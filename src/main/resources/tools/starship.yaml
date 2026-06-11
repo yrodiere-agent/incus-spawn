@@ -1,6 +1,9 @@
 name: starship
 description: Starship cross-shell prompt 1.25.1 with incus-spawn indicator
 
+preserve:
+  - ~/.config/starship.toml
+
 downloads:
   - url: https://github.com/starship/starship/releases/download/v1.25.1/starship-x86_64-unknown-linux-gnu.tar.gz
     sha256: 4488c11ca632327d1f1f16fb2f102c0646094c35479cd5435991385da43c61ac

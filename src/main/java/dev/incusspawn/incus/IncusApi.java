@@ -310,6 +310,20 @@ class IncusApi {
                 "application/octet-stream", extraHeaders, new byte[0]);
     }
 
+    byte[] filePull(String instanceName, String srcPath) {
+        try {
+            var raw = transport.request("GET", filesPath(instanceName, srcPath),
+                    null, Map.of(), new byte[0]);
+            if (!raw.isSuccess()) {
+                throw new IncusException("Failed to pull " + srcPath
+                        + " from " + instanceName + " (HTTP " + raw.statusCode() + ")");
+            }
+            return raw.body();
+        } catch (IOException e) {
+            throw new IncusException("Failed to pull file from " + instanceName, e);
+        }
+    }
+
     private static String filesPath(String instanceName, String destPath) {
         return "/1.0/instances/" + instanceName + "/files?path="
                 + URLEncoder.encode(destPath, StandardCharsets.UTF_8);

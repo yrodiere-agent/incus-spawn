@@ -49,6 +49,11 @@ public class YamlToolSetup implements ToolSetup {
     }
 
     @Override
+    public java.util.List<String> preserve() {
+        return def.getPreserve();
+    }
+
+    @Override
     public java.util.Map<String, ToolDef.ParameterDef> parameters() {
         return def.getParameters();
     }

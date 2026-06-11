@@ -12,6 +12,11 @@ public class PiSetup implements ToolSetup {
     }
 
     @Override
+    public List<String> preserve() {
+        return List.of("~/.pi");
+    }
+
+    @Override
     public List<String> packages() {
         // fd-find (provides 'fd') and ripgrep (provides 'rg') are pre-installed so
         // pi's tools-manager finds them in PATH and skips downloading them on first run.

@@ -7,6 +7,9 @@ parameters:
     default: "false"
     description: "Automatically attach to a tmux session when shelling into the container"
 
+preserve:
+  - ~/.tmux.conf
+
 packages:
   - tmux
 

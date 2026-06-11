@@ -133,7 +133,7 @@ public class ListCommand extends BaseCommand {
     // Actions cache (computed once per data refresh, not per render)
     private java.util.Map<String, java.util.List<ToolAction>> actionsCache = new java.util.HashMap<>();
 
-    private enum PendingAction { NONE, SHELL, BRANCH, BUILD_TEMPLATE, EDIT_TEMPLATE, EXECUTE_ACTION }
+    private enum PendingAction { NONE, SHELL, BRANCH, BUILD_TEMPLATE, EDIT_TEMPLATE, EXECUTE_ACTION, REBASE }
     private PendingAction pendingAction = PendingAction.NONE;
     private String pendingActionTarget;
     private ToolAction pendingToolAction;
@@ -300,6 +300,21 @@ public class ListCommand extends BaseCommand {
                         try {
                             System.in.read();
                         } catch (java.io.IOException ignored) {}
+                    }
+                }
+                case REBASE -> {
+                    returnToInstance = pendingActionTarget;
+                    try {
+                        var rebaseResult = org.aesh.AeshRuntimeRunner.builder()
+                                .command(RebaseCommand.class)
+                                .args(new String[]{pendingActionTarget, "--yes"})
+                                .execute();
+                        int exitCode = rebaseResult != null ? rebaseResult.getResultValue() : 1;
+                        statusMessage = exitCode == 0
+                                ? "Rebased " + pendingActionTarget
+                                : "Rebase failed for " + pendingActionTarget;
+                    } catch (Exception e) {
+                        statusMessage = "Rebase failed: " + e.getMessage();
                     }
                 }
                 case NONE -> { return; }
@@ -598,6 +613,28 @@ public class ListCommand extends BaseCommand {
         // Block actions that mutate the selected instance if there's a pending operation
         if (hasPendingOp(selected) || backgroundTasks.hasRunningTask(selected.name)) {
             statusMessage = "Operation in progress for " + selected.name;
+            return true;
+        }
+
+        // F5: Rebase instance onto its (rebuilt) parent template
+        if (key.isKey(KeyCode.F5)) {
+            if (isRunning(selected)) {
+                statusMessage = "Stop the instance before rebasing.";
+                return true;
+            }
+            var parent = incus.configGet(selected.name, Metadata.PARENT);
+            if (parent.isEmpty()) {
+                statusMessage = "Instance has no parent template — cannot rebase.";
+                return true;
+            }
+            if (!incus.exists(parent)) {
+                statusMessage = "Parent template '" + parent + "' not found — build it first.";
+                return true;
+            }
+            returnToInstance = selected.name;
+            pendingAction = PendingAction.REBASE;
+            pendingActionTarget = selected.name;
+            tui.quit();
             return true;
         }
 
@@ -1352,7 +1389,13 @@ public class ListCommand extends BaseCommand {
         items.add(makeKey("F2", "Shell", !hasInstance || onTemplates));
         items.add(makeKey("F3", "Details", onTemplates ? !hasTemplate : !hasInstance));
         items.add(makeKey("F4", "Branch\u2026", onTemplates ? !isBuilt : !hasInstance));
-        items.add(makeKey("F5", "Build…", !hasTemplate || !onTemplates));
+        if (onTemplates) {
+            items.add(makeKey("F5", "Build…", !hasTemplate));
+        } else {
+            boolean canRebase = hasInstance && !running
+                    && Metadata.TYPE_CLONE.equals(selected != null ? selected.type : "");
+            items.add(makeKey("F5", "Rebase…", !canRebase));
+        }
         items.add(makeKey("F6", "Rename\u2026", !hasInstance || onTemplates));
         items.add(makeKey("F7", "Stop", !running || onTemplates));
         items.add(makeKey("F8", "Destroy\u2026", onTemplates ? !isBuilt : !hasInstance));

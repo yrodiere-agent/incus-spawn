@@ -20,6 +20,11 @@ public class GhSetup implements ToolSetup {
     }
 
     @Override
+    public List<String> preserve() {
+        return List.of("~/.gitconfig", "~/.config/gh");
+    }
+
+    @Override
     public void install(Container c, java.util.Map<String, String> resolvedParams) {
         System.out.println("Installing GitHub CLI...");
         configureAuth(c);

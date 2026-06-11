@@ -1090,6 +1090,13 @@ public class IncusClient {
     }
 
     /**
+     * Pull a file from a container, returning its raw bytes.
+     */
+    public byte[] filePull(String container, String srcPath) {
+        return http().filePull(container, srcPath);
+    }
+
+    /**
      * Push a file into a container.
      */
     public void filePush(String source, String container, String destPath) {

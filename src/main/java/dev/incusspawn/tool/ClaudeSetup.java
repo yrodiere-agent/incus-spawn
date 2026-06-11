@@ -28,6 +28,11 @@ public class ClaudeSetup implements ToolSetup {
     }
 
     @Override
+    public java.util.List<String> preserve() {
+        return java.util.List.of("~/.claude", "~/.claude.json");
+    }
+
+    @Override
     public void install(Container c, java.util.Map<String, String> resolvedParams) {
         installBinary(c);
         configureSettings(c);
