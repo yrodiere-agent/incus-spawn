@@ -1,22 +1,20 @@
 # incus-spawn
 
-Isolated Linux environments that behave like bare-metal machines, not stripped-down application containers.
+Spin up isolated Linux environments in seconds — full system containers with copy-on-write branching and transparent credential isolation. Run AI coding agents, triage untrusted patches, reproduce bug reports — without risking your host.
 
-Unlike Docker/Podman containers, which package a single application with a minimal filesystem, incus-spawn creates full **system containers** powered by [Incus](https://linuxcontainers.org/incus/). Each environment runs its own init system, has real networking with working `ping`, `traceroute`, and `strace`, can run nested containers (Podman/Docker inside), and supports GUI and audio passthrough via Wayland. For untrusted code, KVM virtual machines provide hardware-level isolation with a separate kernel.
+**Docker and Podman are built for shipping applications** — minimal filesystems, single-process isolation, fast startup. incus-spawn solves a different problem: full **system containers** powered by [Incus](https://linuxcontainers.org/incus/) that behave like real machines. Each environment runs its own init system, has real networking (`ping`, `strace`, nested Podman/Docker), and supports GUI and audio passthrough. Templates pre-install your baseline tools and repos, but the environment is a real Linux system — agents and users can freely `dnf install`, `pip install`, build from source, or run Docker Compose just like on a workstation. For untrusted code, KVM virtual machines provide hardware-level isolation with a separate kernel.
 
-**Primary use cases:**
-- Running untrusted AI agents (Claude Code, Pi, etc.) in isolated environments with pre-configured auth
-- Reproducing bug reports from external contributors without risking your host
-- Creating reproducible development environments with pre-cloned repos and cached dependencies
+**API keys and tokens never enter containers.** A host-side MITM TLS proxy intercepts HTTPS and injects credentials transparently — `claude`, `pi`, `gh`, `git`, `curl`, and any other tool work unmodified, with no configuration or wrappers needed inside the environment. Branches run with full internet, proxy-only egress, or completely airgapped. The proxy also caches container image layers and build artifacts on the host — the same dependency is never downloaded twice.
+
+**Branching is instant.** Like `git branch`, each clone is a copy-on-write snapshot that shares storage with its parent. Build a template once with your preferred tools and repos, then spin up complete, disposable environments in seconds — each with its own filesystem, networking, and process tree. Get your work back via standard `git fetch` using `isx://` remotes.
+
+**Built for developer workflows.** Templates are YAML: packages, tools, repos. Branch and it's all there. Git remotes are managed automatically — `git fetch fix-auth` from your host pulls commits straight out of the container. JetBrains Gateway, shell completions, and Claude Code skills plug in via the same tool system.
 
 Built with [Quarkus](https://quarkus.io/) and [Tamboui](https://tamboui.dev/).
 
-## Requirements
-
-- **Linux or macOS (Apple Silicon)** -- On Linux, Incus runs natively. On macOS, `isx init` provisions a lightweight Linux VM automatically via [vfkit](https://github.com/crc-org/vfkit). Windows is not yet supported.
-- **[Incus](https://linuxcontainers.org/incus/)** -- On Linux, `isx init` auto-installs via the detected package manager (`dnf`, `apt`, `zypper`, or `pacman`); on other distros, install manually before running init. On macOS, Incus runs inside the managed VM.
-
 ## Quick Start
+
+Requires **Linux or macOS (Apple Silicon)**. On Linux, [Incus](https://linuxcontainers.org/incus/) runs natively and `isx init` auto-installs it via your package manager. On macOS, `isx init` provisions a lightweight Linux VM automatically via [vfkit](https://github.com/crc-org/vfkit). Windows is not yet supported.
 
 On macOS (Apple Silicon):
 
@@ -47,7 +45,7 @@ isx build tpl-java
 isx
 ```
 
-Fedora users can also install via `dnf`, and JBang users via `jbang` — see [Installation](#installation) for all options.
+Fedora users can also install via `dnf`, and JBang users via `jbang` — see [Installation](#installation) for all options. Shell completions are available for bash, zsh, and fish via `isx completion <shell>`.
 
 ## Branching
 
@@ -60,9 +58,9 @@ tpl-java  (stopped template, ~2GB)
   └── experiment       (stopped, uses ~10MB extra)
 ```
 
-You can install packages, break things, and destroy a branch when done. The template and other branches are completely unaffected.
+You can install packages, break things, and destroy a branch when done. The template and other branches are completely unaffected. Sudo works without a password, and shell sessions set the terminal title to `isx:<containername>` so you always know which environment you're in.
 
-Branches can optionally enable GUI/audio passthrough (Wayland), restricted networking, or an inbox mount to share files read-only from the host.
+Branches can optionally enable GUI/audio passthrough (Wayland + PipeWire with GPU acceleration), restricted networking, or an inbox mount to share files read-only from the host. Resource limits (CPU, memory, disk) are auto-detected from the host but can be overridden. The interactive TUI (`isx` with no arguments) provides a Midnight Commander-style interface with modal dialogs for branching, renaming, and building, plus F3 detail views and F9 tool actions.
 
 ### Credential Isolation
 
@@ -76,7 +74,7 @@ Branches can optionally enable GUI/audio passthrough (Wayland), restricted netwo
 - There is no mechanism for code inside a container to read, extract, or exfiltrate real credentials
 - **HTTPS only**: the proxy intercepts HTTPS traffic, so Git operations must use HTTPS URLs (not SSH). `gh` defaults to HTTPS automatically; for `git clone`, use `https://github.com/...` instead of `git@github.com:...`
 
-The proxy must be running for non-airgapped containers. `isx init` can install it as a systemd user service that starts automatically and survives reboots. Alternatively, run `isx proxy` in a separate terminal. View proxy logs with `isx proxy logs`.
+The proxy must be running for non-airgapped containers. `isx init` can install it as a systemd user service that starts automatically and survives reboots. Alternatively, run `isx proxy` in a separate terminal. View proxy logs with `isx proxy logs`. Builds, branches, and shell access verify the proxy is reachable before proceeding, so you get a clear error instead of mysterious connection failures. If the running proxy version doesn't match the CLI, it is automatically restarted (when no containers are running) or a warning is shown. Branching from a template built with a different CA certificate also warns you before you hit TLS failures.
 
 ### Network Modes
 
@@ -94,7 +92,7 @@ In all non-airgapped modes, credentials are injected transparently by the MITM p
 - **Proxy only**: iptables OUTPUT rules restrict all outbound traffic to the MITM proxy port (443) and DNS — the container cannot reach any external endpoint directly
 - **Airgapped**: no network device, no traffic at all
 
-## Git Remotes
+### Git Remotes
 
 Containers created with `isx branch` are isolated environments, but you need a way to get your changes back. incus-spawn integrates with git's native remote helper protocol so you can use standard `git fetch`, `git push`, and `git pull` between host repos and container repos:
 
@@ -105,7 +103,7 @@ git fetch fix-auth
 git cherry-pick fix-auth/main
 ```
 
-### isx:// URLs
+#### isx:// URLs
 
 The remote uses the `isx://` URL scheme:
 
@@ -132,7 +130,7 @@ git push fix-auth main
 
 The instance must be running for git operations to work. If you specify a wrong path, the error message lists known repositories from the image definition.
 
-### Automatic remotes
+#### Automatic remotes
 
 If you configure `host-paths` in `~/.config/incus-spawn/config.yaml`, remotes are managed automatically:
 
@@ -168,6 +166,23 @@ isx destroy fix-auth
 ```
 
 If a remote with the instance name already exists, a warning is printed with instructions to add it under a different name.
+
+## Caching
+
+The proxy caches to save bandwidth, not to cut corners. Every cache hit is guaranteed to return the same bytes you'd get by fetching directly from upstream — pure speed boost with zero risk. Mutable artifacts (Maven SNAPSHOTs, repository metadata, version listings) are never cached. Immutable artifacts are only committed to the cache after verification against their content digest or upstream checksum — a mismatch means the artifact is discarded and re-fetched. When possible, the proxy also validates artifacts already on the host (e.g. your `~/.m2/repository`) against upstream checksums before serving, avoiding both a redundant download and the risk of serving stale local data.
+
+The MITM proxy caches artifacts from container traffic on the host, shared across all templates and branches:
+
+- **Container image layers** — OCI blobs from Docker Hub, GHCR, and Quay, keyed and verified by SHA256 content digest
+- **Maven and Gradle artifacts** — release JARs, POMs, and plugins from Maven Central and the Gradle plugin portal. SNAPSHOTs and metadata pass through uncached
+- **Gradle distributions** — verified against the upstream `.sha256` sidecar
+
+Build-time caches avoid redundant work across the template chain:
+
+- **DNF packages** — a host-side cache is mounted into each container during builds, so child images don't re-download what the parent already fetched
+- **Tool downloads** — artifacts declared in tool YAML definitions are downloaded and extracted on the host, then pushed into containers. Rebuilds reuse cached files when the SHA256 matches
+
+All caches live under `~/.cache/incus-spawn/` (`registry/`, `maven/`, `gradle/`, `dnf/`, `downloads/`). There is no automatic eviction — cached artifacts accumulate until you delete them manually. This is deliberate: every cached artifact is either content-addressed or version-pinned, so it's either correct forever or superseded by a newer version that gets its own cache entry.
 
 ## Template Images
 
@@ -233,6 +248,8 @@ isx build --out-of-sync
 isx build --all
 ```
 
+The TUI marks templates with `!` when they were built with a different isx version, and `△` when the image or tool definition has changed since the last build — `isx build --out-of-sync` rebuilds these automatically. If a build fails, the container is promoted to an inspectable instance so you can shell in and debug.
+
 ### Declarative Repos
 
 Images can declare git repositories to clone into the container.
@@ -256,6 +273,8 @@ Repo entry fields:
 - `path` (required) -- target directory (`~` expands to agentuser's home)
 - `branch` (optional) -- branch or tag to check out; defaults to the repo's default branch
 - `prime` (optional) -- shell command to run inside the repo directory after cloning, typically to pre-fetch dependencies (e.g. `mvn dependency:go-offline`, `gradle dependencies`)
+
+Declared repos are automatically pre-trusted in `.claude.json` so Claude Code doesn't prompt for trust on first use.
 
 ### Shell Defaults
 
@@ -293,7 +312,7 @@ tools:
 shell-command: pi
 ```
 
-Pi is pre-configured at build time with a placeholder `ANTHROPIC_API_KEY`. The [MITM proxy](#mitm-tls-proxy) intercepts all requests to `api.anthropic.com` and injects your real credentials transparently — Pi works out of the box, and your API key never enters the container. If your host is configured for Vertex AI, the proxy automatically translates Pi's standard Anthropic API requests to Vertex AI format, with no configuration needed inside the container.
+Pi is pre-configured at build time with a placeholder `ANTHROPIC_API_KEY`. The [MITM proxy](#credential-isolation) intercepts all requests to `api.anthropic.com` and injects your real credentials transparently — Pi works out of the box, and your API key never enters the container. If your host is configured for Vertex AI, the proxy automatically translates Pi's standard Anthropic API requests to Vertex AI format, with no configuration needed inside the container.
 
 To run Pi without making it the default shell, omit `shell-command` and just include it in `tools:`:
 
@@ -599,82 +618,6 @@ Action entry fields:
 
 Actions can also be contributed programmatically by CDI beans implementing the `ToolAction` interface, for cases that need logic beyond what YAML declarations can express.
 
-## Features
-
-- **Instant branching**: copy-on-write clones that share storage with the parent image
-- **System containers**: full init, real networking, bare-metal-like developer experience
-- **KVM VMs**: `--vm` flag for hardware-level isolation with separate kernel (optional)
-- **Interactive TUI**: Midnight Commander-style interface with F3 detail views, F9 tool actions, template staleness indicators, and modal dialogs for branching, renaming, and building
-- **GUI and audio passthrough**: Wayland + PipeWire with GPU acceleration
-- **Host resources**: share host files and directories with containers (read-only, overlay, or copy)
-- **Inbox mount**: share a host directory read-only into the container
-- **MITM TLS proxy**: transparent auth injection — credentials never enter containers in any form
-- **Proxy caching**: OCI registry blobs and Maven/Gradle artifacts cached on the host, shared across all branches
-- **Proxy-only networking**: (optional) iptables restricts egress to the MITM proxy only
-- **Network airgapping**: fully isolate environments from the network
-- **Adaptive resource limits**: CPU, memory, and disk auto-detected from host
-- **Claude Code integration**: auth via MITM proxy — API key never enters containers
-- **Pi coding agent integration**: provider-agnostic CLI agent, auth via MITM proxy — always uses standard Anthropic API, proxy handles Vertex AI translation automatically
-- **Claude Code skills**: bake skills into templates so they are available in every branched instance
-- **GitHub integration**: auth via MITM proxy — token never enters containers
-- **Git remotes**: `git fetch`/`git push` between host and container repos via `isx://` URLs, with automatic remote management
-- **SSH key management**: dedicated passphraseless key pair, per-instance SSH config, isolated known_hosts — `ssh <instance-name>` just works
-- **Remote IDE**: JetBrains Gateway support via built-in `idea-backend` tool with transitive `sshd` dependency, and one-click "Open in Gateway" action from the TUI
-- **Tool actions**: tools can declare runtime actions (open URL, run command, copy to clipboard) available via F9 in the TUI, with per-repo expansion and template variable interpolation
-- **Tool dependencies**: tools can declare `requires` for automatic transitive dependency resolution
-- **Version drift detection**: warns when templates were built with a different isx version or when definitions have changed since the last build
-- **Shell completions**: bash, zsh, and fish via `isx completion {bash,zsh,fish}`
-
-## CLI Commands
-
-| Command | Description |
-|---------|-------------|
-| `isx` | Launch the interactive TUI |
-| `isx init` | One-time host setup (Incus, firewall, auth) |
-| `isx build <template>` | Build or rebuild a template image |
-| `isx build <tpl> --with-parents` | Rebuild a template and all its parents |
-| `isx build --all` | Rebuild all discovered templates |
-| `isx build --out-of-sync` | Rebuild out-of-sync templates |
-| `isx build --missing` | Build only templates that don't exist yet |
-| `isx branch <name>` | Create a CoW clone from a template or instance |
-| `isx shell <instance>` | Open a shell in an instance |
-| `isx destroy <instance>` | Destroy an instance |
-| `isx update-all` | Update all templates (packages, repos, tools) |
-| `isx templates` | List available templates |
-| `isx templates list -v` | List templates with source and description |
-| `isx templates new <name>` | Create a new template definition |
-| `isx templates edit <name>` | Edit a template in `$EDITOR` |
-| `isx instances` | List connectable instance names (excludes templates) |
-| `isx project create <name>` | Create a project template from `incus-spawn.yaml` |
-| `isx project update <name>` | Update an existing project template |
-| `isx proxy start` | Start the MITM auth proxy |
-| `isx proxy stop` | Stop the proxy |
-| `isx proxy status` | Show proxy status |
-| `isx proxy install` | Install proxy as a systemd user service |
-| `isx proxy uninstall` | Stop and remove the systemd proxy service |
-| `isx proxy logs` | View proxy logs |
-| `isx proxy dump` | Run a local pass-through proxy for API traffic capture |
-| `isx completion <shell>` | Print shell completion script (bash, zsh, fish) |
-
-Use `isx <command> --help` for detailed options on any command.
-
-## Small Luxuries
-
-Details that save time and avoid frustration:
-
-- **Shared DNF cache**: building a chain of templates (e.g. `tpl-java` which derives from `tpl-dev` which derives from `tpl-minimal`) mounts a host-side cache (`~/.cache/incus-spawn/dnf`) into each container during the build. DNF metadata and downloaded packages are shared across all builds, so child images don't re-download what the parent just fetched. The cache is unmounted before the image is finalized, keeping templates clean.
-- **Registry blob caching**: the MITM proxy caches OCI container image layers (`~/.cache/incus-spawn/registry/`) by content-addressed SHA256 digest. Pulling the same container image in different branches downloads each layer only once. Each blob is verified against its SHA256 digest before being committed to the cache.
-- **Maven/Gradle artifact caching**: the MITM proxy caches artifacts from Maven Central, Maven repository, and Gradle plugin portal (`~/.cache/incus-spawn/maven/`). Release artifacts are immutable and cached permanently; SNAPSHOT and metadata requests pass through uncached. When artifacts already exist in the host's `~/.m2/repository`, the proxy verifies their SHA1 against the upstream checksum before serving — stale or corrupted local artifacts are never served.
-- **CoW pool auto-creation**: `isx init` creates a btrfs storage pool if no copy-on-write pool exists, so branches are instant from the start.
-- **Sudo ready**: your agents and scripts can invoke sudo at will, no password will be required.
-- **Failed build inspection**: if a template build fails, the container is promoted to an inspectable instance so you can shell in and debug.
-- **Proxy health check**: builds, branches, and shell access verify the proxy is reachable before proceeding, so you get a clear error instead of mysterious connection failures.
-- **Template staleness indicators**: the TUI marks templates with `!` when they were built with a different isx version, and `△` when the image or tool definition has changed since the last build. This tells you at a glance which templates need rebuilding.
-- **Version drift remediation**: if the running proxy version doesn't match the CLI, the proxy is automatically restarted (when no containers are running) or a warning is shown.
-- **CA certificate mismatch warning**: branching from a template built with a different CA certificate warns you before you hit TLS failures.
-- **Claude Code auto-trust**: when templates declare repos, the build pre-trusts those directories in `.claude.json` so Claude Code doesn't prompt for trust on first use.
-- **Terminal title**: shell sessions set the terminal title to `isx:<containername>`, and the container prompt maintains it. Easy to identify which terminal belongs to which container.
-
 ## Installation
 
 ### macOS (Homebrew)
@@ -775,3 +718,36 @@ Resolution order (later sources override earlier ones with the same name):
 2. User (`~/.config/incus-spawn/`)
 3. Search paths (in listed order)
 4. Project-local (`.incus-spawn/`)
+
+## CLI Reference
+
+| Command | Description |
+|---------|-------------|
+| `isx` | Launch the interactive TUI |
+| `isx init` | One-time host setup (Incus, firewall, auth) |
+| `isx build <template>` | Build or rebuild a template image |
+| `isx build <tpl> --with-parents` | Rebuild a template and all its parents |
+| `isx build --all` | Rebuild all discovered templates |
+| `isx build --out-of-sync` | Rebuild out-of-sync templates |
+| `isx build --missing` | Build only templates that don't exist yet |
+| `isx branch <name>` | Create a CoW clone from a template or instance |
+| `isx shell <instance>` | Open a shell in an instance |
+| `isx destroy <instance>` | Destroy an instance |
+| `isx update-all` | Update all templates (packages, repos, tools) |
+| `isx templates` | List available templates |
+| `isx templates list -v` | List templates with source and description |
+| `isx templates new <name>` | Create a new template definition |
+| `isx templates edit <name>` | Edit a template in `$EDITOR` |
+| `isx instances` | List connectable instance names (excludes templates) |
+| `isx project create <name>` | Create a project template from `incus-spawn.yaml` |
+| `isx project update <name>` | Update an existing project template |
+| `isx proxy start` | Start the MITM auth proxy |
+| `isx proxy stop` | Stop the proxy |
+| `isx proxy status` | Show proxy status |
+| `isx proxy install` | Install proxy as a systemd user service |
+| `isx proxy uninstall` | Stop and remove the systemd proxy service |
+| `isx proxy logs` | View proxy logs |
+| `isx proxy dump` | Run a local pass-through proxy for API traffic capture |
+| `isx completion <shell>` | Print shell completion script (bash, zsh, fish) |
+
+Use `isx <command> --help` for detailed options on any command.
