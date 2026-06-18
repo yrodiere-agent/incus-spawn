@@ -34,6 +34,7 @@ public final class HostResourceSetup {
         if (resolved.startsWith("http://") || resolved.startsWith("https://")) {
             throw new IllegalArgumentException("'path' is required for URL sources: " + source);
         }
+        if (!resolved.startsWith("/")) return "/home/agentuser/" + resolved;
         return resolved;
     }
 
