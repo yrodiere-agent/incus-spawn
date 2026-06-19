@@ -137,8 +137,9 @@ fi
 install -m 755 "$SCRIPT_DIR/src/main/resources/git-remote-isx" "$INSTALL_DIR/git-remote-isx"
 
 # ── Replace Homebrew installation if present ─────────────────────────────
-BREW_ISX="$(brew --prefix 2>/dev/null || true)/bin/isx"
-if [ -x "$BREW_ISX" ] && [ "$INSTALL_DIR/$BINARY_NAME" != "$BREW_ISX" ]; then
+if command -v brew >/dev/null 2>&1 \
+    && BREW_ISX="$(brew --prefix)/bin/isx" \
+    && [ -x "$BREW_ISX" ] && [ "$INSTALL_DIR/$BINARY_NAME" != "$BREW_ISX" ]; then
     echo "Homebrew installation detected at $BREW_ISX"
     echo "Replacing with locally built binary..."
     rm -f "$BREW_ISX"
