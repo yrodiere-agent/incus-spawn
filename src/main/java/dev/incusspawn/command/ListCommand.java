@@ -2584,7 +2584,7 @@ public class ListCommand extends BaseCommand {
         var setup = toolDefLoader.find(toolName);
         if (setup instanceof YamlToolSetup yts) {
             for (var entry : yts.toolDef().getActions()) {
-                if ("command".equals(entry.getType())) {
+                if ("shell".equals(entry.getType())) {
                     if (actionId == null || actionId.equals(entry.getId())) {
                         return entry.getCommand();
                     }
@@ -2597,7 +2597,7 @@ public class ListCommand extends BaseCommand {
             for (var cdiTool : cdiTools) {
                 if (toolName.equals(cdiTool.name())) {
                     for (var entry : cdiTool.actions()) {
-                        if ("command".equals(entry.getType())) {
+                        if ("shell".equals(entry.getType())) {
                             if (actionId == null || actionId.equals(entry.getId())) {
                                 return entry.getCommand();
                             }
