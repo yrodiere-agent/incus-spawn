@@ -1918,6 +1918,15 @@ public class ListCommand extends BaseCommand {
         }
         if (key.isKey(KeyCode.ENTER)) {
             var action = actionsList.get(actionsSelectedIndex);
+            var cmd = action.shellCommand();
+            if (cmd.isPresent()) {
+                pendingAction = PendingAction.SHELL_WITH_COMMAND;
+                pendingShellCommand = cmd.get();
+                pendingActionTarget = actionsContext.instanceName();
+                mode = Mode.BROWSE;
+                tui.quit();
+                return true;
+            }
             if (action.needsDeferredExecution()) {
                 pendingAction = PendingAction.EXECUTE_ACTION;
                 pendingToolAction = action;
