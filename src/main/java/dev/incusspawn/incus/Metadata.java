@@ -28,6 +28,7 @@ public final class Metadata {
     public static final String KVM_ENABLED = PREFIX + "kvm-enabled";
     public static final String WORKDIR = PREFIX + "workdir";
     public static final String SHELL_COMMAND = PREFIX + "shell-command";
+    public static final String DEFAULT_ACTION = PREFIX + "default-action";
     public static final String PENDING_OP = PREFIX + "pending-op";
     public static final String STATIC_IP = PREFIX + "static-ip";
     public static final String STATIC_GATEWAY = PREFIX + "static-gateway";

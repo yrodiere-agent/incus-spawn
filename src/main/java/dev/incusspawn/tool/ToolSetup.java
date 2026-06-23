@@ -29,6 +29,9 @@ public interface ToolSetup {
         return java.util.Map.of();
     }
 
+    /** Runtime actions this tool contributes to the TUI actions menu. */
+    default java.util.List<ToolDef.ActionEntry> actions() { return java.util.List.of(); }
+
     /**
      * Install and configure this tool inside the given container. Packages are already installed.
      *

@@ -110,6 +110,8 @@ public class ImageDef {
     private String workdir;
     @JsonProperty("shell-command")
     private String shellCommand;
+    @JsonProperty("default-action")
+    private String defaultAction;
 
     @JsonIgnore
     private String source = "unknown";
@@ -152,6 +154,8 @@ public class ImageDef {
     public void setWorkdir(String workdir) { this.workdir = workdir; }
     public String getShellCommand() { return shellCommand; }
     public void setShellCommand(String shellCommand) { this.shellCommand = shellCommand; }
+    public String getDefaultAction() { return defaultAction; }
+    public void setDefaultAction(String defaultAction) { this.defaultAction = defaultAction; }
     public String getSource() { return source; }
     public void setSource(String source) { this.source = source; }
 

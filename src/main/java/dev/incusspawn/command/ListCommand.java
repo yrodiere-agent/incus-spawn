@@ -25,6 +25,7 @@ import dev.incusspawn.tui.BackgroundTaskManager;
 import dev.incusspawn.tui.InstanceLockManager;
 import dev.incusspawn.tool.ToolAction;
 import dev.incusspawn.tool.ToolDefLoader;
+import dev.incusspawn.tool.ToolSetup;
 import dev.incusspawn.tool.YamlToolAction;
 import dev.incusspawn.tool.YamlToolSetup;
 import dev.incusspawn.tui.ShiftTabBindings;
@@ -83,6 +84,7 @@ public class ListCommand extends BaseCommand {
     private IncusClient incus;
 
     private ToolDefLoader toolDefLoader;
+    private java.util.List<ToolSetup> cdiTools;
 
     private BackgroundTaskManager backgroundTasks;
 
@@ -136,12 +138,15 @@ public class ListCommand extends BaseCommand {
     private ActionContext actionsContext;
     // Actions cache (computed once per data refresh, not per render)
     private java.util.Map<String, java.util.List<ToolAction>> actionsCache = new java.util.HashMap<>();
+    // Default action reference per instance (from ImageDef default-action field)
+    private java.util.Map<String, String> defaultActionRef = new java.util.HashMap<>();
 
     private boolean deferredBuildForBranch;
 
-    private enum PendingAction { NONE, SHELL, BRANCH, BUILD_TEMPLATE, BUILD_THEN_BRANCH, EDIT_TEMPLATE, EXECUTE_ACTION }
+    private enum PendingAction { NONE, SHELL, SHELL_WITH_COMMAND, BRANCH, BUILD_TEMPLATE, BUILD_THEN_BRANCH, EDIT_TEMPLATE, EXECUTE_ACTION }
     private PendingAction pendingAction = PendingAction.NONE;
     private String pendingActionTarget;
+    private String pendingShellCommand;
     private ToolAction pendingToolAction;
     private ActionContext pendingToolActionContext;
     // After returning from a shell/branch, focus this instance in the instances panel
@@ -181,6 +186,7 @@ public class ListCommand extends BaseCommand {
     protected CommandResult doExecute() {
         this.incus = RuntimeServices.incus();
         this.toolDefLoader = RuntimeServices.toolDefLoader();
+        this.cdiTools = RuntimeServices.toolSetups();
         this.backgroundTasks = RuntimeServices.backgroundTasks();
         this.lockManager = RuntimeServices.lockManager();
         reloadData();
@@ -273,6 +279,10 @@ public class ListCommand extends BaseCommand {
                     returnToInstance = pendingActionTarget;
                     shellInto(pendingActionTarget);
                 }
+                case SHELL_WITH_COMMAND -> {
+                    returnToInstance = pendingActionTarget;
+                    shellInto(pendingActionTarget, pendingShellCommand);
+                }
                 case BRANCH -> {
                     returnToInstance = pendingActionTarget;
                     try {
@@ -360,7 +370,7 @@ public class ListCommand extends BaseCommand {
                                     inst.created, inst.runtime, inst.parent, inst.limitsCpu,
                                     inst.limitsMemory, inst.rootSize, inst.ipv4, inst.networkMode,
                                     inst.architecture, inst.buildVersion, inst.definitionSha,
-                                    inst.type, inst.buildSourceJson, "")
+                                    inst.type, inst.buildSourceJson, "", inst.defaultAction)
                             : inst)
                     .toList();
         }
@@ -421,11 +431,15 @@ public class ListCommand extends BaseCommand {
         // Instance panel: exclude template instances (they're shown in the template panel)
         entries = new ArrayList<>();
         actionsCache = new java.util.HashMap<>();
+        defaultActionRef = new java.util.HashMap<>();
         for (var inst : allInstances) {
             if (!templateNames.contains(inst.name)) {
                 entries.add(inst);
-                // Pre-compute actions for each instance
                 actionsCache.put(inst.name, resolveActionsForInstance(inst));
+                var defAction = resolveDefaultActionFromInstanceMetadata(inst);
+                if (defAction != null) {
+                    defaultActionRef.put(inst.name, defAction);
+                }
             }
         }
         buildRowData();
@@ -629,11 +643,16 @@ public class ListCommand extends BaseCommand {
             mode = Mode.CONFIRM_DELETE;
             return true;
         }
-        if (key.isKey(KeyCode.ENTER) || key.isKey(KeyCode.F2)) {
+        if (key.isKey(KeyCode.F2)) {
             if (showProxyErrorIfNeeded(selected.name)) return true;
             pendingAction = PendingAction.SHELL;
             pendingActionTarget = selected.name;
             tui.quit();
+            return true;
+        }
+        if (key.isKey(KeyCode.ENTER)) {
+            if (showProxyErrorIfNeeded(selected.name)) return true;
+            if (dispatchDefaultAction(selected)) tui.quit();
             return true;
         }
         if (key.isKey(KeyCode.F4)) {
@@ -1817,7 +1836,7 @@ public class ListCommand extends BaseCommand {
             mode = Mode.BROWSE;
             return true;
         }
-        if (key.isKey(KeyCode.F2) || key.isKey(KeyCode.ENTER)) {
+        if (key.isKey(KeyCode.F2)) {
             var selected = selectedEntry(instanceTableState);
             if (selected != null) {
                 if (showProxyErrorIfNeeded(selected.name)) return true;
@@ -1825,6 +1844,15 @@ public class ListCommand extends BaseCommand {
                 pendingActionTarget = selected.name;
                 mode = Mode.BROWSE;
                 tui.quit();
+            }
+            return true;
+        }
+        if (key.isKey(KeyCode.ENTER)) {
+            var selected = selectedEntry(instanceTableState);
+            if (selected != null) {
+                if (showProxyErrorIfNeeded(selected.name)) return true;
+                mode = Mode.BROWSE;
+                if (dispatchDefaultAction(selected)) tui.quit();
             }
             return true;
         }
@@ -1890,8 +1918,7 @@ public class ListCommand extends BaseCommand {
         }
         if (key.isKey(KeyCode.ENTER)) {
             var action = actionsList.get(actionsSelectedIndex);
-            // Commands need deferred execution (quit TUI, run, optionally wait for key)
-            if (action instanceof YamlToolAction yamlAction && yamlAction.needsDeferredExecution()) {
+            if (action.needsDeferredExecution()) {
                 pendingAction = PendingAction.EXECUTE_ACTION;
                 pendingToolAction = action;
                 pendingToolActionContext = actionsContext;
@@ -1937,6 +1964,7 @@ public class ListCommand extends BaseCommand {
                 Line.styled("", Style.EMPTY),
                 Line.styled("Keyboard shortcuts:", Style.EMPTY.fg(ModalRenderer.FG).bg(ModalRenderer.BG)),
                 Line.styled("", Style.EMPTY),
+                shortcutRow("Enter", "Default instance action", null, null),
                 shortcutRow("Tab", "Switch panels", "⇧Tab", "Reverse"),
                 shortcutRow("F1", "This dialog", null, null),
                 shortcutRow("F2", "Shell into instance", null, null),
@@ -2402,30 +2430,174 @@ public class ListCommand extends BaseCommand {
         var actions = new ArrayList<ToolAction>();
         var tools = collectInstalledTools(instance);
         java.util.List<ActionContext.RepoInfo> repos = null;
+        var handledTools = new java.util.HashSet<String>();
 
         // YAML-declared actions
         for (var toolName : tools) {
             var setup = toolDefLoader.find(toolName);
             if (setup instanceof YamlToolSetup yts) {
                 var toolDef = yts.toolDef();
+                if (!toolDef.getActions().isEmpty()) {
+                    handledTools.add(toolName);
+                }
                 for (var entry : toolDef.getActions()) {
                     if (YamlToolAction.EXPAND_REPOS.equals(entry.getExpand())) {
-                        // Expand per repo (compute repos once)
                         if (repos == null) repos = collectRepos(instance);
                         for (var repo : repos) {
-                            var action = new YamlToolAction(toolName, entry, repo);
-                            addActionIfAllowed(actions, action, instance);
+                            addActionIfAllowed(actions,
+                                    new YamlToolAction(toolName, entry, repo), instance);
                         }
                     } else {
-                        // Single action
-                        var action = new YamlToolAction(toolName, entry);
-                        addActionIfAllowed(actions, action, instance);
+                        addActionIfAllowed(actions,
+                                new YamlToolAction(toolName, entry), instance);
+                    }
+                }
+            }
+        }
+
+        // CDI tool actions (for tools not already handled by YAML)
+        if (cdiTools != null) {
+            for (var cdiTool : cdiTools) {
+                if (tools.contains(cdiTool.name()) && !handledTools.contains(cdiTool.name())) {
+                    for (var entry : cdiTool.actions()) {
+                        if (YamlToolAction.EXPAND_REPOS.equals(entry.getExpand())) {
+                            if (repos == null) repos = collectRepos(instance);
+                            for (var repo : repos) {
+                                addActionIfAllowed(actions,
+                                        new YamlToolAction(cdiTool.name(), entry, repo), instance);
+                            }
+                        } else {
+                            addActionIfAllowed(actions,
+                                    new YamlToolAction(cdiTool.name(), entry), instance);
+                        }
                     }
                 }
             }
         }
 
         return actions;
+    }
+
+    private String resolveDefaultActionFromInstanceMetadata(InstanceInfo instance) {
+        if (instance.defaultAction != null && !instance.defaultAction.isEmpty()) {
+            return instance.defaultAction;
+        }
+        return null;
+    }
+
+    private java.util.Optional<ToolAction> findDefaultAction(String ref, InstanceInfo instance) {
+        String toolName;
+        String actionId;
+        int colon = ref.indexOf(':');
+        if (colon >= 0) {
+            toolName = ref.substring(0, colon);
+            actionId = ref.substring(colon + 1);
+        } else {
+            toolName = ref;
+            actionId = null;
+        }
+
+        var actions = getActionsForInstance(instance);
+        var matching = actions.stream()
+                .filter(a -> toolName.equals(a.toolName()))
+                .toList();
+
+        if (matching.isEmpty()) {
+            statusMessage = "default-action '" + ref + "': tool not found";
+            return java.util.Optional.empty();
+        }
+
+        if (actionId != null) {
+            var found = matching.stream()
+                    .filter(a -> a.id().map(actionId::equals).orElse(false))
+                    .findFirst();
+            if (found.isEmpty()) {
+                statusMessage = "default-action '" + ref + "': action id not found";
+            }
+            return found;
+        }
+
+        if (matching.size() == 1) return java.util.Optional.of(matching.get(0));
+
+        statusMessage = "default-action '" + ref + "': ambiguous, use tool:action-id";
+        return java.util.Optional.empty();
+    }
+
+    private boolean dispatchDefaultAction(InstanceInfo selected) {
+        var ref = defaultActionRef.get(selected.name);
+        if (ref == null || ref.isBlank()) {
+            pendingAction = PendingAction.SHELL;
+            pendingActionTarget = selected.name;
+            return true;
+        }
+        var result = findDefaultAction(ref, selected);
+        if (result.isEmpty()) {
+            return false;
+        }
+        var defAction = result.get();
+        var cmd = defAction.shellCommand();
+        if (cmd.isPresent()) {
+            pendingAction = PendingAction.SHELL_WITH_COMMAND;
+            pendingShellCommand = cmd.get();
+            pendingActionTarget = selected.name;
+            return true;
+        }
+        if (defAction.needsDeferredExecution()) {
+            pendingAction = PendingAction.EXECUTE_ACTION;
+            pendingToolAction = defAction;
+            pendingToolActionContext = buildActionContext(selected);
+            pendingActionTarget = selected.name;
+            return true;
+        }
+        var execResult = defAction.execute(buildActionContext(selected));
+        statusMessage = execResult.message();
+        return false;
+    }
+
+    private String resolveDefaultCommandFromTemplate(String templateName) {
+        var refValue = incus.configGet(templateName, Metadata.DEFAULT_ACTION);
+        var ref = (refValue == null || refValue.isBlank()) ? null : refValue;
+        if (ref == null) return null;
+
+        String toolName;
+        String actionId;
+        int colon = ref.indexOf(':');
+        if (colon >= 0) {
+            toolName = ref.substring(0, colon);
+            actionId = ref.substring(colon + 1);
+        } else {
+            toolName = ref;
+            actionId = null;
+        }
+
+        // Check YAML tools
+        var setup = toolDefLoader.find(toolName);
+        if (setup instanceof YamlToolSetup yts) {
+            for (var entry : yts.toolDef().getActions()) {
+                if ("command".equals(entry.getType())) {
+                    if (actionId == null || actionId.equals(entry.getId())) {
+                        return entry.getCommand();
+                    }
+                }
+            }
+        }
+
+        // Check CDI tools
+        if (cdiTools != null) {
+            for (var cdiTool : cdiTools) {
+                if (toolName.equals(cdiTool.name())) {
+                    for (var entry : cdiTool.actions()) {
+                        if ("command".equals(entry.getType())) {
+                            if (actionId == null || actionId.equals(entry.getId())) {
+                                return entry.getCommand();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        return null;
     }
 
     private java.util.Set<String> collectInstalledTools(InstanceInfo instance) {
@@ -3127,7 +3299,14 @@ public class ListCommand extends BaseCommand {
 
         System.out.println("Branch '" + name + "' is ready.");
         System.out.println("Connecting to " + name + "...\n");
-        incus.interactiveShell(name, "agentuser", prefetched.toShellPrep());
+        var shellPrep = prefetched.toShellPrep();
+        var defaultCmd = resolveDefaultCommandFromTemplate(source);
+        if (defaultCmd != null) {
+            shellPrep = new IncusClient.ShellPrep(
+                    shellPrep.workdir(), defaultCmd,
+                    false, shellPrep.subnetDiagnostic(), shellPrep.terminfoHandled());
+        }
+        incus.interactiveShell(name, "agentuser", shellPrep);
         System.out.println();
     }
 
@@ -3236,6 +3415,10 @@ public class ListCommand extends BaseCommand {
     }
 
     private void shellInto(String name) {
+        shellInto(name, null);
+    }
+
+    private void shellInto(String name, String commandOverride) {
         if ("Stopped".equalsIgnoreCase(incus.getInstanceStatus(name))) {
             System.out.println("Starting " + name + "...");
             HostResourceSetup.removeStaleDevices(incus, name);
@@ -3244,7 +3427,15 @@ public class ListCommand extends BaseCommand {
         }
         checkGuiHealth(name);
         System.out.println("Connecting to " + name + "...\n");
-        incus.interactiveShell(name, "agentuser");
+        if (commandOverride != null) {
+            var prep = IncusClient.ShellPrep.from(incus, name);
+            var withCommand = new IncusClient.ShellPrep(
+                    prep.workdir(), commandOverride,
+                    false, prep.subnetDiagnostic(), prep.terminfoHandled());
+            incus.interactiveShell(name, "agentuser", withCommand);
+        } else {
+            incus.interactiveShell(name, "agentuser");
+        }
         System.out.println();
     }
 
@@ -3294,7 +3485,8 @@ public class ListCommand extends BaseCommand {
                         type,
                         Metadata.TYPE_BASE.equals(type)
                                 ? configVal(config, Metadata.BUILD_SOURCE, "") : "",
-                        configVal(config, Metadata.PENDING_OP, "")));
+                        configVal(config, Metadata.PENDING_OP, ""),
+                        configVal(config, Metadata.DEFAULT_ACTION, "")));
             }
             return entryList;
         } catch (Exception e) {
@@ -3333,5 +3525,6 @@ public class ListCommand extends BaseCommand {
                                 String limitsCpu, String limitsMemory, String rootSize,
                                 String ipv4, String networkMode, String architecture,
                                 String buildVersion, String definitionSha,
-                                String type, String buildSourceJson, String pendingOp) {}
+                                String type, String buildSourceJson, String pendingOp,
+                                String defaultAction) {}
 }
