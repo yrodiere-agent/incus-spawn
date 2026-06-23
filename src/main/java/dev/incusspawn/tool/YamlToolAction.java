@@ -35,7 +35,10 @@ public class YamlToolAction implements ToolAction {
 
     @Override
     public java.util.Optional<String> id() {
-        return java.util.Optional.ofNullable(entry.getId());
+        var baseId = entry.getId();
+        if (baseId == null) return java.util.Optional.empty();
+        if (repo != null) return java.util.Optional.of(baseId + "/" + repo.name());
+        return java.util.Optional.of(baseId);
     }
 
     @Override

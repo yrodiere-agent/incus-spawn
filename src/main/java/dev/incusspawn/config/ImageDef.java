@@ -436,6 +436,7 @@ public class ImageDef {
             var def = loadResource(RESOURCE_DIR + filename, warnings);
             if (def != null) {
                 def.setSource("built-in");
+                validate(def, filename, warnings);
                 defs.put(def.getName(), def);
             }
         }
@@ -455,6 +456,7 @@ public class ImageDef {
                             var def = YAML.readValue(is, ImageDef.class);
                             if (def.getName() != null) {
                                 def.setSource(path.toAbsolutePath().normalize().toString());
+                                validate(def, path.getFileName().toString(), warnings);
                                 defs.put(def.getName(), def);
                             }
                         } catch (IOException e) {
@@ -464,6 +466,13 @@ public class ImageDef {
                     });
         } catch (IOException e) {
             warnings.accept("Warning: failed to scan " + dir + ": " + e.getMessage());
+        }
+    }
+
+    private static void validate(ImageDef def, String source, Consumer<String> warnings) {
+        if (def.getDefaultAction() != null && def.getDefaultAction().isBlank()) {
+            warnings.accept(source + ": 'default-action' is blank; remove it or set a valid tool reference");
+            def.setDefaultAction(null);
         }
     }
 
