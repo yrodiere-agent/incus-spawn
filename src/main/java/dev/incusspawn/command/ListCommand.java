@@ -436,7 +436,7 @@ public class ListCommand extends BaseCommand {
             if (!templateNames.contains(inst.name)) {
                 entries.add(inst);
                 actionsCache.put(inst.name, resolveActionsForInstance(inst));
-                var defAction = resolveDefaultActionFromInstanceMetadata(inst);
+                var defAction = resolveDefaultActionRef(inst);
                 if (defAction != null) {
                     defaultActionRef.put(inst.name, defAction);
                 }
@@ -2478,7 +2478,17 @@ public class ListCommand extends BaseCommand {
         return actions;
     }
 
-    private String resolveDefaultActionFromInstanceMetadata(InstanceInfo instance) {
+    private String resolveDefaultActionRef(InstanceInfo instance) {
+        var parent = instance.parent;
+        if (parent != null && !parent.isEmpty() && !"-".equals(parent)) {
+            var chain = getInheritanceChain(parent);
+            for (int i = chain.size() - 1; i >= 0; i--) {
+                var def = chain.get(i);
+                if (def.getDefaultAction() != null && !def.getDefaultAction().isBlank()) {
+                    return def.getDefaultAction();
+                }
+            }
+        }
         if (instance.defaultAction != null && !instance.defaultAction.isEmpty()) {
             return instance.defaultAction;
         }
