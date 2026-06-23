@@ -57,6 +57,8 @@ Package deduplication: `BuildCommand` collects all ancestor packages and subtrac
 
 Resolution via `ToolDefLoader` (later overrides earlier): built-in YAML -> user YAML -> search paths -> project-local YAML. Java CDI tools are used as fallback when no YAML tool matches.
 
+Tools can declare runtime actions (`ActionEntry`) shown in the TUI's F9 actions menu. Both YAML tools (via `actions:` in the YAML) and Java/CDI tools (via `ToolSetup.actions()`) can contribute actions. Templates select a default action via `ImageDef.defaultAction` (`default-action` in YAML), which is run on Enter in the TUI. The reference format is `tool-name` (single action) or `tool-name:action-id` (multiple actions). `default-action` inherits through the parent chain (child overrides parent) and is intentionally excluded from `contentFingerprint()` so changing it doesn't trigger template rebuilds.
+
 **Important**: Built-in YAML files are listed in a hardcoded `BUILTIN_FILES` constant (not classpath scanning) because GraalVM native image makes classpath directory listing unreliable. When adding a built-in image or tool, you must update the corresponding `BUILTIN_FILES` list.
 
 ### Incus Interaction

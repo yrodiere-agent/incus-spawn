@@ -33,6 +33,11 @@ public class YamlToolAction implements ToolAction {
     }
 
     @Override
+    public java.util.Optional<String> id() {
+        return java.util.Optional.ofNullable(entry.getId());
+    }
+
+    @Override
     public String label() {
         return interpolate(entry.getLabel(), null);
     }
@@ -50,6 +55,14 @@ public class YamlToolAction implements ToolAction {
         return isUrl() ? interpolate(entry.getUrl(), context) : null;
     }
 
+    @Override
+    public java.util.Optional<String> shellCommand() {
+        return TYPE_COMMAND.equals(entry.getType())
+                ? java.util.Optional.ofNullable(entry.getCommand())
+                : java.util.Optional.empty();
+    }
+
+    @Override
     public boolean needsDeferredExecution() {
         return TYPE_COMMAND.equals(entry.getType());
     }

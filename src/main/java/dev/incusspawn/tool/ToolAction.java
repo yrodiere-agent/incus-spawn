@@ -13,6 +13,13 @@ public interface ToolAction {
     String toolName();
 
     /**
+     * Stable identifier for referencing this action (e.g. from {@code default-action}).
+     */
+    default java.util.Optional<String> id() {
+        return java.util.Optional.empty();
+    }
+
+    /**
      * Human-readable label shown in the actions menu (e.g., "Open in Gateway").
      */
     String label();
@@ -22,6 +29,21 @@ public interface ToolAction {
      */
     default boolean requiresRunning() {
         return true;
+    }
+
+    /**
+     * Whether this action must be executed after leaving the TUI (e.g. interactive commands).
+     */
+    default boolean needsDeferredExecution() {
+        return false;
+    }
+
+    /**
+     * If this action runs a command inside the container, returns the shell command string.
+     * Empty for non-command actions (url, clipboard, etc.).
+     */
+    default java.util.Optional<String> shellCommand() {
+        return java.util.Optional.empty();
     }
 
     /**

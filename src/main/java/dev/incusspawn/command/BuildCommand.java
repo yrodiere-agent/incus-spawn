@@ -1368,6 +1368,10 @@ public class BuildCommand extends BaseCommand {
         if (imageDef.getShellCommand() != null && !imageDef.getShellCommand().isBlank()) {
             incus.configSet(buildName, Metadata.SHELL_COMMAND, imageDef.getShellCommand());
         }
+        var effectiveDefaultAction = resolveEffectiveDefaultAction(imageDef, defs);
+        if (effectiveDefaultAction != null) {
+            incus.configSet(buildName, Metadata.DEFAULT_ACTION, effectiveDefaultAction);
+        }
     }
 
     static String resolveEffectiveWorkdir(ImageDef imageDef, Map<String, ImageDef> defs) {
@@ -1378,6 +1382,18 @@ public class BuildCommand extends BaseCommand {
         while (current != null) {
             if (!current.getRepos().isEmpty()) {
                 return expandHome(current.getRepos().get(0).getPath());
+            }
+            if (current.isRoot() || current.getParent() == null) break;
+            current = defs.get(current.getParent());
+        }
+        return null;
+    }
+
+    static String resolveEffectiveDefaultAction(ImageDef imageDef, Map<String, ImageDef> defs) {
+        var current = imageDef;
+        while (current != null) {
+            if (current.getDefaultAction() != null && !current.getDefaultAction().isBlank()) {
+                return current.getDefaultAction();
             }
             if (current.isRoot() || current.getParent() == null) break;
             current = defs.get(current.getParent());
