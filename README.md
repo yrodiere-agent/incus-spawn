@@ -459,7 +459,7 @@ Pass parameter values using the map form in image definitions (the `idea-backend
 
 ### Tool Actions
 
-Tools can declare runtime actions that appear in the TUI (press **F9** on a running instance, or **Enter** to run the template's default action). Three types: `url` (opens in browser), `command` (runs on the host), `copy-to-clipboard`. Actions support template variables (`${ip}`, `${name}`, `${repo_name}`, `${repo_path}`) and `expand: repos` to generate one action per declared repository:
+Tools can declare runtime actions that appear in the TUI (press **F9** on a running instance, or **Enter** to run the template's default action). Four types: `url` (opens in browser), `command` (runs on the host), `shell` (runs inside the container as an interactive terminal command), `copy-to-clipboard`. Actions support template variables (`${ip}`, `${name}`, `${repo_name}`, `${repo_path}`) and `expand: repos` to generate one action per declared repository:
 
 ```yaml
 actions:
