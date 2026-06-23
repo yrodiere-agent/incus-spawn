@@ -2573,26 +2573,26 @@ public class ListCommand extends BaseCommand {
             actionId = null;
         }
 
-        // Check YAML tools
+        var matching = new java.util.ArrayList<dev.incusspawn.tool.ToolDef.ActionEntry>();
+
         var setup = toolDefLoader.find(toolName);
         if (setup instanceof YamlToolSetup yts) {
             for (var entry : yts.toolDef().getActions()) {
                 if ("shell".equals(entry.getType())) {
                     if (actionId == null || actionId.equals(entry.getId())) {
-                        return entry.getCommand();
+                        matching.add(entry);
                     }
                 }
             }
         }
 
-        // Check CDI tools
         if (cdiTools != null) {
             for (var cdiTool : cdiTools) {
                 if (toolName.equals(cdiTool.name())) {
                     for (var entry : cdiTool.actions()) {
                         if ("shell".equals(entry.getType())) {
                             if (actionId == null || actionId.equals(entry.getId())) {
-                                return entry.getCommand();
+                                matching.add(entry);
                             }
                         }
                     }
@@ -2600,6 +2600,7 @@ public class ListCommand extends BaseCommand {
             }
         }
 
+        if (matching.size() == 1) return matching.get(0).getCommand();
         return null;
     }
 
