@@ -57,10 +57,10 @@ public class YamlToolAction implements ToolAction {
     }
 
     @Override
-    public java.util.Optional<String> shellCommand() {
-        return TYPE_SHELL.equals(entry.getType())
-                ? java.util.Optional.ofNullable(entry.getCommand())
-                : java.util.Optional.empty();
+    public java.util.Optional<String> shellCommand(ActionContext context) {
+        if (!TYPE_SHELL.equals(entry.getType())) return java.util.Optional.empty();
+        var cmd = interpolate(entry.getCommand(), context);
+        return (cmd == null || cmd.isBlank()) ? java.util.Optional.empty() : java.util.Optional.of(cmd);
     }
 
     @Override
