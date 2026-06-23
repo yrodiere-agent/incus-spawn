@@ -42,7 +42,7 @@ public interface ToolAction {
      * If this action runs a command inside the container, returns the shell command string.
      * Empty for non-command actions (url, clipboard, etc.).
      */
-    default java.util.Optional<String> shellCommand() {
+    default java.util.Optional<String> shellCommand(ActionContext context) {
         return java.util.Optional.empty();
     }
 

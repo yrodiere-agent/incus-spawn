@@ -1918,27 +1918,8 @@ public class ListCommand extends BaseCommand {
         }
         if (key.isKey(KeyCode.ENTER)) {
             var action = actionsList.get(actionsSelectedIndex);
-            var cmd = action.shellCommand();
-            if (cmd.isPresent()) {
-                pendingAction = PendingAction.SHELL_WITH_COMMAND;
-                pendingShellCommand = cmd.get();
-                pendingActionTarget = actionsContext.instanceName();
-                mode = Mode.BROWSE;
-                tui.quit();
-                return true;
-            }
-            if (action.needsDeferredExecution()) {
-                pendingAction = PendingAction.EXECUTE_ACTION;
-                pendingToolAction = action;
-                pendingToolActionContext = actionsContext;
-                mode = Mode.BROWSE;
-                tui.quit();
-                return true;
-            }
-            // Inline execution for URL and copy-to-clipboard
-            var result = action.execute(actionsContext);
-            statusMessage = result.message();
             mode = Mode.BROWSE;
+            if (dispatchAction(action, actionsContext)) tui.quit();
             return true;
         }
         return false;
@@ -2553,22 +2534,25 @@ public class ListCommand extends BaseCommand {
         if (result.isEmpty()) {
             return false;
         }
-        var defAction = result.get();
-        var cmd = defAction.shellCommand();
+        return dispatchAction(result.get(), buildActionContext(selected));
+    }
+
+    private boolean dispatchAction(ToolAction action, ActionContext context) {
+        var cmd = action.shellCommand(context);
         if (cmd.isPresent()) {
             pendingAction = PendingAction.SHELL_WITH_COMMAND;
             pendingShellCommand = cmd.get();
-            pendingActionTarget = selected.name;
+            pendingActionTarget = context.instanceName();
             return true;
         }
-        if (defAction.needsDeferredExecution()) {
+        if (action.needsDeferredExecution()) {
             pendingAction = PendingAction.EXECUTE_ACTION;
-            pendingToolAction = defAction;
-            pendingToolActionContext = buildActionContext(selected);
-            pendingActionTarget = selected.name;
+            pendingToolAction = action;
+            pendingToolActionContext = context;
+            pendingActionTarget = context.instanceName();
             return true;
         }
-        var execResult = defAction.execute(buildActionContext(selected));
+        var execResult = action.execute(context);
         statusMessage = execResult.message();
         return false;
     }
