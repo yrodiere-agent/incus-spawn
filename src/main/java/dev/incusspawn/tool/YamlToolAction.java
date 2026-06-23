@@ -10,6 +10,7 @@ public class YamlToolAction implements ToolAction {
 
     private static final String TYPE_URL = "url";
     private static final String TYPE_COMMAND = "command";
+    private static final String TYPE_SHELL = "shell";
     private static final String TYPE_COPY_TO_CLIPBOARD = "copy-to-clipboard";
     public static final String EXPAND_REPOS = "repos";
 
@@ -57,14 +58,14 @@ public class YamlToolAction implements ToolAction {
 
     @Override
     public java.util.Optional<String> shellCommand() {
-        return TYPE_COMMAND.equals(entry.getType())
+        return TYPE_SHELL.equals(entry.getType())
                 ? java.util.Optional.ofNullable(entry.getCommand())
                 : java.util.Optional.empty();
     }
 
     @Override
     public boolean needsDeferredExecution() {
-        return TYPE_COMMAND.equals(entry.getType());
+        return TYPE_COMMAND.equals(entry.getType()) || TYPE_SHELL.equals(entry.getType());
     }
 
     public boolean shouldAutoReturn() {
@@ -81,6 +82,7 @@ public class YamlToolAction implements ToolAction {
         return switch (type) {
             case TYPE_URL -> executeUrl(context);
             case TYPE_COMMAND -> executeCommand(context);
+            case TYPE_SHELL -> ActionResult.error("Shell actions must be dispatched via interactiveShell");
             case TYPE_COPY_TO_CLIPBOARD -> executeCopyToClipboard(context);
             default -> ActionResult.error("Unknown action type: " + type);
         };

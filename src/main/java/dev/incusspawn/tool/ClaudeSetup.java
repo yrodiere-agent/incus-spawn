@@ -32,7 +32,7 @@ public class ClaudeSetup implements ToolSetup {
     public List<ToolDef.ActionEntry> actions() {
         var a = new ToolDef.ActionEntry();
         a.setLabel("Claude Code");
-        a.setType("command");
+        a.setType("shell");
         a.setCommand("if find ~/.claude/projects -maxdepth 2 -name '*.jsonl' 2>/dev/null | grep -q .; then claude --continue; else claude; fi");
         a.setAutoReturn(true);
         return List.of(a);
