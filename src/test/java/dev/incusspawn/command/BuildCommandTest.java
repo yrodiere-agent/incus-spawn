@@ -591,6 +591,59 @@ class BuildCommandTest {
                 BuildCommand.resolveEffectiveWorkdir(imageDef, java.util.Map.of()));
     }
 
+    // --- resolveEffectiveDefaultAction ---
+
+    @Test
+    void resolveEffectiveDefaultActionExplicit() {
+        var imageDef = new ImageDef();
+        imageDef.setName("tpl-test");
+        imageDef.setDefaultAction("claude");
+
+        assertEquals("claude",
+                BuildCommand.resolveEffectiveDefaultAction(imageDef, java.util.Map.of()));
+    }
+
+    @Test
+    void resolveEffectiveDefaultActionNone() {
+        var imageDef = new ImageDef();
+        imageDef.setName("tpl-test");
+
+        assertNull(BuildCommand.resolveEffectiveDefaultAction(imageDef, java.util.Map.of()));
+    }
+
+    @Test
+    void resolveEffectiveDefaultActionFromParent() {
+        var parent = new ImageDef();
+        parent.setName("tpl-parent");
+        parent.setDefaultAction("claude");
+
+        var child = new ImageDef();
+        child.setName("tpl-child");
+        child.setParent("tpl-parent");
+
+        var defs = java.util.Map.of("tpl-parent", parent, "tpl-child", child);
+        assertEquals("claude",
+                BuildCommand.resolveEffectiveDefaultAction(child, defs));
+    }
+
+    @Test
+    void resolveEffectiveDefaultActionChildOverridesParent() {
+        var parent = new ImageDef();
+        parent.setName("tpl-parent");
+        parent.setDefaultAction("pi");
+
+        var child = new ImageDef();
+        child.setName("tpl-child");
+        child.setParent("tpl-parent");
+        child.setDefaultAction("claude");
+
+        var defs = java.util.Map.of("tpl-parent", parent, "tpl-child", child);
+        assertEquals("claude",
+                BuildCommand.resolveEffectiveDefaultAction(child, defs));
+    }
+
+
+
     private static ToolSetup simpleToolSetup(String toolName) {
         return new ToolSetup() {
             @Override public String name() { return toolName; }

@@ -1371,6 +1371,8 @@ public class BuildCommand extends BaseCommand {
         var effectiveDefaultAction = resolveEffectiveDefaultAction(imageDef, defs);
         if (effectiveDefaultAction != null) {
             incus.configSet(buildName, Metadata.DEFAULT_ACTION, effectiveDefaultAction);
+        } else {
+            incus.configUnset(buildName, Metadata.DEFAULT_ACTION);
         }
     }
 
@@ -1392,7 +1394,7 @@ public class BuildCommand extends BaseCommand {
     static String resolveEffectiveDefaultAction(ImageDef imageDef, Map<String, ImageDef> defs) {
         var current = imageDef;
         while (current != null) {
-            if (current.getDefaultAction() != null && !current.getDefaultAction().isBlank()) {
+            if (current.getDefaultAction() != null) {
                 return current.getDefaultAction();
             }
             if (current.isRoot() || current.getParent() == null) break;

@@ -2469,16 +2469,19 @@ public class ListCommand extends BaseCommand {
     }
 
     private String resolveDefaultActionRef(InstanceInfo instance) {
-        var parent = instance.parent;
-        if (parent != null && !parent.isEmpty() && !"-".equals(parent)) {
-            var chain = getInheritanceChain(parent);
+        // Walk the template YAML chain (child wins over parent).
+        var chain = getInheritanceChain(instance.parent);
+        if (!chain.isEmpty()) {
             for (int i = chain.size() - 1; i >= 0; i--) {
                 var def = chain.get(i);
-                if (def.getDefaultAction() != null && !def.getDefaultAction().isBlank()) {
+                if (def.getDefaultAction() != null) {
                     return def.getDefaultAction();
                 }
             }
+            return null;
         }
+        // YAML definitions not on disk (e.g. user deleted them after building the template):
+        // fall back to the snapshot stored in Incus metadata at build time.
         if (instance.defaultAction != null && !instance.defaultAction.isEmpty()) {
             return instance.defaultAction;
         }
@@ -2508,13 +2511,18 @@ public class ListCommand extends BaseCommand {
         }
 
         if (actionId != null) {
-            var found = matching.stream()
+            var withId = matching.stream()
                     .filter(a -> a.id().map(actionId::equals).orElse(false))
-                    .findFirst();
-            if (found.isEmpty()) {
+                    .toList();
+            if (withId.isEmpty()) {
                 statusMessage = "default-action '" + ref + "': action id not found";
+                return java.util.Optional.empty();
             }
-            return found;
+            if (withId.size() > 1) {
+                statusMessage = "default-action '" + ref + "': multiple actions match";
+                return java.util.Optional.empty();
+            }
+            return java.util.Optional.of(withId.get(0));
         }
 
         if (matching.size() == 1) return java.util.Optional.of(matching.get(0));
@@ -2558,8 +2566,22 @@ public class ListCommand extends BaseCommand {
     }
 
     private String resolveDefaultCommandFromTemplate(String templateName) {
-        var refValue = incus.configGet(templateName, Metadata.DEFAULT_ACTION);
-        var ref = (refValue == null || refValue.isBlank()) ? null : refValue;
+        String ref = null;
+        // Walk the template YAML chain (child wins over parent).
+        var chain = getInheritanceChain(templateName);
+        if (!chain.isEmpty()) {
+            for (int i = chain.size() - 1; i >= 0; i--) {
+                var def = chain.get(i);
+                if (def.getDefaultAction() != null) {
+                    ref = def.getDefaultAction();
+                    break;
+                }
+            }
+        } else {
+            // YAML definitions not on disk: fall back to Incus metadata snapshot.
+            var refValue = incus.configGet(templateName, Metadata.DEFAULT_ACTION);
+            ref = (refValue == null || refValue.isBlank()) ? null : refValue;
+        }
         if (ref == null) return null;
 
         String toolName;
@@ -2600,7 +2622,10 @@ public class ListCommand extends BaseCommand {
             }
         }
 
-        if (matching.size() == 1) return matching.get(0).getCommand();
+        if (matching.size() == 1) {
+            var cmd = matching.get(0).getCommand();
+            return (cmd == null || cmd.isBlank()) ? null : cmd;
+        }
         return null;
     }
 
