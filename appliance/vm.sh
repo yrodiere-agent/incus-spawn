@@ -126,7 +126,7 @@ start_vfkit() {
         --cpus "$CPUS" --memory "$MEMORY" \
         --kernel "$APPLIANCE_DIR/vmlinuz" \
         --initrd "$dummy_initrd" \
-        --kernel-cmdline "root=/dev/vda rw rootflags=commit=300 console=hvc0 quiet mitigations=off isx.gateway=${ISX_GATEWAY:-10.166.11.1} isx.mitm_port=${ISX_MITM_PORT:-18443}" \
+        --kernel-cmdline "root=/dev/vda rootfstype=btrfs rw rootflags=commit=300 console=hvc0 quiet isx.gateway=${ISX_GATEWAY:-10.166.11.1} isx.mitm_port=${ISX_MITM_PORT:-18443}" \
         --device virtio-blk,path="$DISK_IMG" \
         --device virtio-net,nat \
         --device virtio-serial,logFilePath="$LOG_FILE" \
@@ -167,7 +167,7 @@ start_qemu() {
         -kernel "$APPLIANCE_DIR/vmlinuz" \
         -drive id=root,file="$DISK_IMG",format=raw,if=virtio \
         -netdev user,id=net0 -device virtio-net-pci,netdev=net0 \
-        -append "root=/dev/vda rw rootflags=commit=300 console=$console quiet mitigations=off isx.gateway=${ISX_GATEWAY:-10.166.11.1} isx.mitm_port=${ISX_MITM_PORT:-18443}" \
+        -append "root=/dev/vda rootfstype=btrfs rw rootflags=commit=300 console=$console quiet isx.gateway=${ISX_GATEWAY:-10.166.11.1} isx.mitm_port=${ISX_MITM_PORT:-18443}" \
         > "$LOG_FILE" 2>&1 &
     local pid=$!
     echo "$pid" > "$PID_FILE"
@@ -272,7 +272,7 @@ cmd_shell() {
                 -kernel "$APPLIANCE_DIR/vmlinuz" \
                 -drive file="$DISK_IMG",format=raw,if=virtio \
                 -netdev user,id=net0 -device virtio-net-pci,netdev=net0 \
-                -append "root=/dev/vda rw rootflags=commit=300 console=$console mitigations=off isx.gateway=${ISX_GATEWAY:-10.166.11.1} isx.mitm_port=${ISX_MITM_PORT:-18443}"
+                -append "root=/dev/vda rootfstype=btrfs rw rootflags=commit=300 console=$console isx.gateway=${ISX_GATEWAY:-10.166.11.1} isx.mitm_port=${ISX_MITM_PORT:-18443}"
             ;;
     esac
 }

@@ -63,6 +63,16 @@ Key dependencies discovered during development:
 
 Without initrd, the kernel can't resolve `root=LABEL=...` (label resolution requires udev). The kernel cmdline uses `root=/dev/vda` instead -- the virtio-blk device is always `/dev/vda` since there is exactly one disk. `CONFIG_DEVTMPFS_MOUNT=y` ensures `/dev/vda` exists at boot.
 
+The cmdline also passes `rootfstype=btrfs`. Without it the kernel probes `fuseblk` (we ship FUSE for virtiofs/lxcfs) before `btrfs` at root mount, which prints a harmless `fuseblk: Unknown parameter 'commit'` since `fuseblk` rejects the `commit` rootflag. `rootfstype=btrfs` skips the probing. It must live on the bootloader cmdline, not the kernel's built-in `CONFIG_CMDLINE`: arm64 only offers `CMDLINE_FROM_BOOTLOADER`/`CMDLINE_FORCE` (no `EXTEND`), so a built-in line is ignored once a bootloader cmdline is present, and `FORCE` would discard the dynamic `isx.*` params. Mitigations, by contrast, *are* compiled off (`CONFIG_CPU_MITIGATIONS=n`), so no `mitigations=off` is passed.
+
+### Expected Console Warnings
+
+These appear during boot and are **expected** — deliberate tradeoffs, not faults:
+
+- **`AppArmor support has been disabled because of lack of kernel support`** — the minimal kernel omits `CONFIG_SECURITY_APPARMOR`. Container isolation relies on the VM boundary, user namespaces, and seccomp; we do not ship AppArmor (it would also require the `apparmor` userspace). A deliberate choice for this single-tenant dev appliance.
+- **`Instance type not operational … KVM support is missing (no /dev/kvm)`** — there is no nested virtualization (the host hypervisor, e.g. Apple Virtualization.framework, does not expose it). `isx` launches **containers**, not nested VMs, so this is irrelevant. Not fixable in the guest kernel.
+- **`Couldn't find the CGroup memory swap accounting, swap limits will be ignored`** — **misleading**. The kernel has `CONFIG_MEMCG` + `CONFIG_SWAP`, and `memory.swap.*` files are present in cgroup v2 (verified), so swap limits do work. This is a conservative false-negative in the incus/LXC probe.
+
 ## Init System
 
 The appliance uses **BusyBox init** as PID 1, not systemd or OpenRC. This is the simplest possible init for a single-purpose appliance:

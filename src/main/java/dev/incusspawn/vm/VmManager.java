@@ -782,8 +782,10 @@ public final class VmManager {
     // --- Internal: helpers ---
 
     private static String kernelCmdline(String console) {
-        return "root=/dev/vda rw rootflags=commit=300 console=" + console
-                + " mitigations=off"
+        // mitigations=off is compiled in (CONFIG_CPU_MITIGATIONS=n), so it is
+        // not repeated here. rootfstype=btrfs avoids the kernel probing fuseblk
+        // (which rejects the 'commit' rootflag) before btrfs at root mount.
+        return "root=/dev/vda rootfstype=btrfs rw rootflags=commit=300 console=" + console
                 + " isx.gateway=" + gatewayIp()
                 + " isx.mitm_port=" + mitmPort()
                 + " isx.time=" + (System.currentTimeMillis() / 1000)

@@ -106,7 +106,7 @@ boot_vfkit() {
         --cpus 2 --memory 2048 \
         --kernel "$BUILD_DIR/vmlinuz" \
         --initrd "$dummy_initrd" \
-        --kernel-cmdline "root=/dev/vda rw rootflags=commit=300 console=hvc0 mitigations=off isx.vsock_incus=8443" \
+        --kernel-cmdline "root=/dev/vda rootfstype=btrfs rw rootflags=commit=300 console=hvc0 isx.vsock_incus=8443" \
         --device virtio-blk,path="$BUILD_DIR/disk.img" \
         --device virtio-net,nat \
         --device virtio-serial,logFilePath="$LOGFILE" \
@@ -161,7 +161,7 @@ boot_qemu() {
         -serial stdio \
         -kernel "$BUILD_DIR/vmlinuz" \
         -drive file="$BUILD_DIR/disk.img",format=raw,if=virtio \
-        -append "root=/dev/vda rw rootflags=commit=300 console=$console mitigations=off isx.smoke_test=1" \
+        -append "root=/dev/vda rootfstype=btrfs rw rootflags=commit=300 console=$console isx.smoke_test=1" \
         > "$LOGFILE" 2>&1 &
     local qemu_pid=$!
     local elapsed=0
