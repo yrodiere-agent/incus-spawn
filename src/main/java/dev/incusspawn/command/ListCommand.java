@@ -688,7 +688,9 @@ public class ListCommand extends BaseCommand {
             return true;
         }
         if (key.isKey(KeyCode.F9)) {
-            var actions = getActionsForInstance(selected);
+            var actions = getActionsForInstance(selected).stream()
+                    .filter(a -> !a.requiresRunning() || isRunning(selected))
+                    .toList();
             if (actions.isEmpty()) {
                 statusMessage = "No actions available for " + selected.name;
                 return true;
@@ -2401,19 +2403,12 @@ public class ListCommand extends BaseCommand {
     }
 
     private boolean hasActionsForInstance(InstanceInfo instance) {
-        return !getActionsForInstance(instance).isEmpty();
+        return getActionsForInstance(instance).stream()
+                .anyMatch(a -> !a.requiresRunning() || isRunning(instance));
     }
 
     private java.util.List<ToolAction> getActionsForInstance(InstanceInfo instance) {
         return actionsCache.getOrDefault(instance.name, java.util.List.of());
-    }
-
-    private void addActionIfAllowed(java.util.List<ToolAction> actions,
-                                     ToolAction action,
-                                     InstanceInfo instance) {
-        if (!action.requiresRunning() || isRunning(instance)) {
-            actions.add(action);
-        }
     }
 
     private java.util.List<ToolAction> resolveActionsForInstance(InstanceInfo instance) {
@@ -2434,12 +2429,10 @@ public class ListCommand extends BaseCommand {
                     if (YamlToolAction.EXPAND_REPOS.equals(entry.getExpand())) {
                         if (repos == null) repos = collectRepos(instance);
                         for (var repo : repos) {
-                            addActionIfAllowed(actions,
-                                    new YamlToolAction(toolName, entry, repo), instance);
+                            actions.add(new YamlToolAction(toolName, entry, repo));
                         }
                     } else {
-                        addActionIfAllowed(actions,
-                                new YamlToolAction(toolName, entry), instance);
+                        actions.add(new YamlToolAction(toolName, entry));
                     }
                 }
             }
@@ -2453,12 +2446,10 @@ public class ListCommand extends BaseCommand {
                         if (YamlToolAction.EXPAND_REPOS.equals(entry.getExpand())) {
                             if (repos == null) repos = collectRepos(instance);
                             for (var repo : repos) {
-                                addActionIfAllowed(actions,
-                                        new YamlToolAction(cdiTool.name(), entry, repo), instance);
+                                actions.add(new YamlToolAction(cdiTool.name(), entry, repo));
                             }
                         } else {
-                            addActionIfAllowed(actions,
-                                    new YamlToolAction(cdiTool.name(), entry), instance);
+                            actions.add(new YamlToolAction(cdiTool.name(), entry));
                         }
                     }
                 }
