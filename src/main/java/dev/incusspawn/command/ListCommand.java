@@ -2544,12 +2544,7 @@ public class ListCommand extends BaseCommand {
         if (result.isEmpty()) {
             return false;
         }
-        var action = result.get();
-        if (action.requiresRunning() && !isRunning(selected)) {
-            statusMessage = "default-action '" + ref + "': instance not running";
-            return false;
-        }
-        return dispatchAction(action, buildActionContext(selected));
+        return dispatchAction(result.get(), buildActionContext(selected));
     }
 
     private boolean dispatchAction(ToolAction action, ActionContext context) {
