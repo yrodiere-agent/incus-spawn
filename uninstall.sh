@@ -169,6 +169,36 @@ if [ -f "$INSTALL_DIR/git-remote-isx" ]; then
     rm -f "$INSTALL_DIR/git-remote-isx"
 fi
 
+# ── Undo install.sh's Homebrew override ───────────────────────────────────
+# install.sh points the brew prefix bin entries at our build (a symlink into
+# $INSTALL_DIR; older installs left a real-file copy). Remove only our own
+# override — a symlink back into $INSTALL_DIR, or a legacy copy when the
+# formula is no longer tracked — then relink so `isx` resolves to the
+# Homebrew-managed version again if that formula is still installed.
+BREW_FORMULA="incus-spawn"   # formula name differs from the binary name (isx)
+if command -v brew >/dev/null 2>&1; then
+    BREW_BIN="$(brew --prefix)/bin"
+    if [ "$INSTALL_DIR" != "$BREW_BIN" ]; then
+        FORMULA_INSTALLED=false
+        brew list --formula "$BREW_FORMULA" >/dev/null 2>&1 && FORMULA_INSTALLED=true
+        for f in "$BINARY_NAME" git-remote-isx; do
+            target="$(readlink "$BREW_BIN/$f" 2>/dev/null || true)"
+            if [ "$target" = "$INSTALL_DIR/$f" ]; then
+                echo "Removing Homebrew override symlink: $BREW_BIN/$f"
+                rm -f "$BREW_BIN/$f"
+            elif [ -f "$BREW_BIN/$f" ] && [ ! -L "$BREW_BIN/$f" ] && ! $FORMULA_INSTALLED; then
+                # Legacy real-file copy left by an older install.sh.
+                echo "Removing Homebrew copy: $BREW_BIN/$f"
+                rm -f "$BREW_BIN/$f"
+            fi
+        done
+        if $FORMULA_INSTALLED; then
+            echo "Restoring Homebrew-managed $BREW_FORMULA link..."
+            brew link --overwrite "$BREW_FORMULA" >/dev/null 2>&1 || true
+        fi
+    fi
+fi
+
 # ── Remove shell completions ──────────────────────────────────────────────
 
 for f in "$ZSH_COMPLETION" "$BASH_COMPLETION" "$FISH_COMPLETION"; do

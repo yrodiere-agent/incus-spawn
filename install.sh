@@ -136,21 +136,22 @@ fi
 # Install git remote helper shim for isx:// URLs
 install -m 755 "$SCRIPT_DIR/src/main/resources/git-remote-isx" "$INSTALL_DIR/git-remote-isx"
 
-# ── Replace Homebrew installation if present ─────────────────────────────
+# ── Override a Homebrew installation if present ───────────────────────────
+# The brew prefix bin (e.g. /opt/homebrew/bin) usually sorts ahead of
+# $INSTALL_DIR on PATH, so a brew-managed isx would shadow the build we just
+# installed. Point the brew location at our build via a symlink instead of a
+# copy: one source of truth, self-describing, and uninstall can safely detect
+# and remove only links that point back into $INSTALL_DIR.
 if command -v brew >/dev/null 2>&1 \
-    && BREW_ISX="$(brew --prefix)/bin/isx" \
-    && [ -x "$BREW_ISX" ] && [ "$INSTALL_DIR/$BINARY_NAME" != "$BREW_ISX" ]; then
-    echo "Homebrew installation detected at $BREW_ISX"
-    echo "Replacing with locally built binary..."
-    rm -f "$BREW_ISX"
-    cp "$INSTALL_DIR/$BINARY_NAME" "$BREW_ISX"
-    chmod +x "$BREW_ISX"
-    BREW_GIT_REMOTE="$(brew --prefix)/bin/git-remote-isx"
-    if [ -f "$BREW_GIT_REMOTE" ] || [ -L "$BREW_GIT_REMOTE" ]; then
-        rm -f "$BREW_GIT_REMOTE"
-        cp "$INSTALL_DIR/git-remote-isx" "$BREW_GIT_REMOTE"
-        chmod +x "$BREW_GIT_REMOTE"
-    fi
+    && BREW_BIN="$(brew --prefix)/bin" \
+    && [ -x "$BREW_BIN/isx" ] && [ "$INSTALL_DIR" != "$BREW_BIN" ]; then
+    echo "Homebrew installation detected at $BREW_BIN/isx"
+    echo "Linking it to the locally built binary..."
+    for f in "$BINARY_NAME" git-remote-isx; do
+        if [ -e "$INSTALL_DIR/$f" ] && { [ -e "$BREW_BIN/$f" ] || [ -L "$BREW_BIN/$f" ]; }; then
+            ln -sf "$INSTALL_DIR/$f" "$BREW_BIN/$f"
+        fi
+    done
 fi
 
 echo "Installed. Run 'isx' to get started."
