@@ -257,6 +257,9 @@ public class ActionResolver {
             current = def.getParent();
         }
 
+        // Reverse to root→child order so callers can iterate from end
+        // to get "child wins over parent" semantics
+        java.util.Collections.reverse(chain);
         return chain;
     }
 
