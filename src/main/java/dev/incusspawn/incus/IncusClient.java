@@ -141,6 +141,7 @@ public class IncusClient {
                 0, 0, null, Map.of(), System.out, System.err);
     }
 
+    /** Like {@link #shellExecInteractiveAsUser} but with a PTY so isatty() returns true. */
     public int shellExecInteractivePtyAsUser(String container, String user, String script) {
         var size = IncusApi.terminalSize();
         return http().execStream(container,
