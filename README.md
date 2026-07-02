@@ -274,7 +274,7 @@ default-action: claude
 
 - `workdir` -- the directory to `cd` into when opening a shell. Defaults to the first declared repo's path if omitted.
 - `shell-command` -- a command to run instead of the default login shell (e.g. `claude` or `pi`). Falls back to `bash --login` if it fails to start.
-- `default-action` -- a tool action to run when pressing Enter on an instance in the TUI. The value is a tool name (e.g. `claude`) if the tool has a single action, or `tool:action-id` (e.g. `claude:launch`) if the tool has multiple actions (see [Tool Actions](#tool-actions) for the `id` field). When set, Enter runs the action and F2 opens a shell; when unset, Enter opens a shell. Inherits from parent templates; a child overrides the parent's default action. No rebuild required when changing this field.
+- `default-action` -- a tool action to run when pressing Enter on an instance in the TUI or when running `isx run <instance>` from the CLI. The value is a tool name (e.g. `claude`) if the tool has a single action, or `tool:action-id` (e.g. `claude:launch`) if the tool has multiple actions (see [Tool Actions](#tool-actions) for the `id` field). When set, Enter runs the action and F2 opens a shell; when unset, Enter/`isx run` opens a shell. Inherits from parent templates; a child overrides the parent's default action. No rebuild required when changing this field.
 
 ### Claude Code
 
@@ -524,7 +524,7 @@ Pass parameter values using the map form in image definitions (the `idea-backend
 
 ### Tool Actions
 
-Tools can declare runtime actions that appear in the TUI (press **F9** on a running instance, or **Enter** to run the template's default action). Actions can be declared in YAML tool definitions or programmatically by Java/CDI tools. The built-in `claude` and `pi` tools automatically contribute shell actions ("Claude Code" and "Pi Coding Agent") when included in a template's `tools` list.
+Tools can declare runtime actions that appear in the TUI (press **F9** on a running instance, or **Enter** to run the template's default action) and can be invoked from the CLI via `isx run <instance> --action <tool:action-id>`. Running `isx run <instance>` with no `--action` flag executes the template's default action. Actions can be declared in YAML tool definitions or programmatically by Java/CDI tools. The built-in `claude` and `pi` tools automatically contribute shell actions ("Claude Code" and "Pi Coding Agent") when included in a template's `tools` list.
 
 Action entry fields:
 
@@ -674,6 +674,7 @@ Beyond security, a shared project directory is also **misleading**. The agent's 
 | `isx build <template>` | Build or rebuild a template (`--all`, `--missing`, `--out-of-sync`, `--with-parents`) |
 | `isx branch <name>` | Create a CoW clone from a template or instance |
 | `isx shell <instance>` | Open a shell in an instance |
+| `isx run <instance>` | Run the default action or a specific action (`--action <tool:action-id>`) |
 | `isx destroy <instance>` | Destroy an instance |
 | `isx update-base` | Check for and install base image updates (`--list`, `--latest`, or a tag) |
 | `isx update-all` | Update all templates (packages, repos, tools) |
