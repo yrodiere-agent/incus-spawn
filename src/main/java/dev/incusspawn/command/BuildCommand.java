@@ -1825,7 +1825,7 @@ public class BuildCommand extends BaseCommand {
             if (repo.getPrime() != null && !repo.getPrime().isBlank()) {
                 System.out.println("Priming " + repo.getPath() + "...");
                 var expanded = expandHome(repo.getPath());
-                container.runAsUser("agentuser",
+                container.runAsUserPty("agentuser",
                         "cd " + shellQuote(expanded) + " && " + repo.getPrime(),
                         "Failed to prime " + repo.getPath());
             }

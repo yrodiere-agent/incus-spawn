@@ -192,6 +192,7 @@ class BuildCommandTest {
 
         // git clone succeeds
         when(incus.shellExecInteractiveAsUser(eq("test"), anyString(), anyString())).thenReturn(0);
+        when(incus.shellExecInteractivePtyAsUser(eq("test"), anyString(), anyString())).thenReturn(0);
 
         var repo = new ImageDef.RepoEntry();
         repo.setUrl("https://github.com/quarkusio/quarkus.git");
@@ -209,7 +210,7 @@ class BuildCommandTest {
                 "git clone --single-branch -- 'https://github.com/quarkusio/quarkus.git' '/home/agentuser/quarkus'");
         verify(incus).shellExecInteractiveAsUser("test", "agentuser",
                 "git -C '/home/agentuser/quarkus' remote set-branches origin '*'");
-        verify(incus).shellExecInteractiveAsUser("test", "agentuser",
+        verify(incus).shellExecInteractivePtyAsUser("test", "agentuser",
                 "cd '/home/agentuser/quarkus' && mvn -B dependency:go-offline");
     }
 
