@@ -27,49 +27,14 @@ public class ShellCommand extends BaseCommand {
     protected CommandResult doExecute() throws Exception {
         var incus = RuntimeServices.incus();
 
-        if (!incus.exists(name)) {
-            System.err.println("Error: no instance named '" + name + "' found.");
-            System.err.println("Run 'incus-spawn list' to see available environments.");
+        var parent = InstancePrep.prepareInstance(incus, name);
+        if (parent == null) {
             return CommandResult.valueOf(1);
         }
-
-        var networkMode = incus.configGet(name, Metadata.NETWORK_MODE);
-        if (!NetworkMode.AIRGAP.name().equals(networkMode)) {
-            if (!ProxyHealthCheck.checkOrWarn(incus)) return CommandResult.valueOf(1);
-            BridgeSubnetCheck.warnIfConflict(incus);
-            FirewalldCheck.warnIfNotRunning();
-            fixCaMismatch(incus, name);
-        }
-
-        // Start if stopped
-        if ("Stopped".equalsIgnoreCase(incus.getInstanceStatus(name))) {
-            System.out.println("Starting " + name + "...");
-            HostResourceSetup.removeStaleDevices(incus, name);
-            incus.start(name);
-            incus.waitForReady(name);
-        }
-
-        GuiPassthrough.checkGuiHealth(incus, name);
 
         System.out.println("Connecting to " + name + "...\n");
         incus.interactiveShell(name, "agentuser");
         return CommandResult.SUCCESS;
-    }
-
-    private void fixCaMismatch(dev.incusspawn.incus.IncusClient incus, String container) {
-        // Ensure the container is running so we can push the cert
-        if ("Stopped".equalsIgnoreCase(incus.getInstanceStatus(container))) {
-            HostResourceSetup.removeStaleDevices(incus, container);
-            incus.start(container);
-            incus.waitForReady(container);
-        }
-
-        if (CertificateAuthority.fixContainerCaIfNeeded(incus, container)) {
-            var sep = "\033[33m" + "─".repeat(60) + "\033[0m";
-            System.err.println(sep);
-            System.err.println("\033[1;33mCA certificate mismatch\033[0m — updated automatically.");
-            System.err.println(sep);
-        }
     }
 
 }
