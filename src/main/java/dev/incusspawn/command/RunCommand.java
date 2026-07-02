@@ -43,6 +43,14 @@ public class RunCommand extends BaseCommand {
             return CommandResult.valueOf(1);
         }
 
+        // Validate parent template before any side effects
+        var parent = incus.configGet(name, Metadata.PARENT);
+        if (parent == null || parent.isEmpty()) {
+            System.err.println("Error: instance '" + name + "' has no parent template.");
+            System.err.println("This does not appear to be an incus-spawn managed instance.");
+            return CommandResult.valueOf(1);
+        }
+
         var networkMode = incus.configGet(name, Metadata.NETWORK_MODE);
         if (!NetworkMode.AIRGAP.name().equals(networkMode)) {
             if (!ProxyHealthCheck.checkOrWarn(incus)) return CommandResult.valueOf(1);
@@ -60,13 +68,6 @@ public class RunCommand extends BaseCommand {
         }
 
         GuiPassthrough.checkGuiHealth(incus, name);
-
-        // Get parent template and installed tools
-        var parent = incus.configGet(name, Metadata.PARENT);
-        if (parent == null || parent.isEmpty()) {
-            System.err.println("Error: instance '" + name + "' has no parent template.");
-            return CommandResult.valueOf(1);
-        }
 
         // Build the action resolver
         var toolDefLoader = RuntimeServices.toolDefLoader();
@@ -143,12 +144,14 @@ public class RunCommand extends BaseCommand {
         var result = toolAction.execute(context);
         System.out.println(result.message());
 
-        // For YAML actions with auto_return: false, wait for keypress
+        // For YAML actions with auto_return: false, wait for keypress (only in interactive terminals)
         if (toolAction instanceof YamlToolAction yamlAction && !yamlAction.shouldAutoReturn()) {
-            System.out.println("\nPress any key to continue...");
-            try {
-                System.in.read();
-            } catch (java.io.IOException ignored) {}
+            if (System.console() != null) {
+                System.out.println("\nPress any key to continue...");
+                try {
+                    System.in.read();
+                } catch (java.io.IOException ignored) {}
+            }
         }
 
         return CommandResult.SUCCESS;
