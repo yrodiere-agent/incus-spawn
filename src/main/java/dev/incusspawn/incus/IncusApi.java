@@ -483,9 +483,54 @@ class IncusApi {
     int execStream(String instance, List<String> command,
                    Integer uid, Integer gid, String cwd, Map<String, String> env,
                    OutputStream stdout, OutputStream stderr) {
+        return execStream(instance, command, uid, gid, cwd, env, stdout, stderr, false, 0, 0);
+    }
+
+    /**
+     * Non-interactive exec with optional PTY. When {@code pty} is false, stdout and stderr
+     * are streamed separately. When true, a pseudo-terminal is allocated (so isatty() returns
+     * true inside the container) and output is muxed into {@code stdout}; {@code stderr} is
+     * ignored. The host terminal is not switched to raw mode and stdin is not forwarded.
+     */
+    int execStream(String instance, List<String> command,
+                   Integer uid, Integer gid, String cwd, Map<String, String> env,
+                   OutputStream stdout, OutputStream stderr,
+                   boolean pty, int width, int height) {
         return retryOnNotRunning(() -> {
-            var exec = postExec(instance, command, uid, gid, cwd, env, false, 0, 0);
-            return execWebSocket(exec, stdout, stderr, null);
+            var exec = postExec(instance, command, uid, gid, cwd, env, pty, width, height);
+            if (!pty) {
+                return execWebSocket(exec, stdout, stderr, null);
+            }
+            var outDst = stdout != null ? stdout : OutputStream.nullOutputStream();
+            try (var controlWs = transport.openWebSocket(wsUrl(exec, "control"));
+                 var dataWs    = transport.openWebSocket(wsUrl(exec, "0"))) {
+
+                var keepalive    = startKeepalive(controlWs);
+                var dataAlive    = startKeepalive(dataWs);
+                var controlDrain = Thread.ofVirtual().start(() -> drainQuietly(controlWs));
+
+                var lastData = new java.util.concurrent.atomic.AtomicLong(System.nanoTime());
+                var dataThread = Thread.ofVirtual().start(() -> wsWriteTo(dataWs, outDst, lastData));
+
+                assertAllFdsConnected(exec.fds, Set.of("0", "control"));
+
+                int exitCode = waitForExecOp(exec.opPath);
+
+                dataAlive.interrupt();
+                awaitDrain(lastData, dataThread);
+                if (dataThread.isAlive()) {
+                    dataWs.close();
+                    joinQuietly(dataThread);
+                }
+
+                keepalive.interrupt();
+                controlWs.close();
+                joinQuietly(controlDrain);
+
+                return exitCode;
+            } catch (IOException e) {
+                throw new IncusException("Failed to open exec WebSocket", e);
+            }
         });
     }
 
@@ -788,18 +833,18 @@ class IncusApi {
     }
 
     /**
-     * Drain the data reader threads, then force-close their sockets. Returns immediately when
-     * the readers finish on their own (close frames arrived — the healthy path). Otherwise it
-     * waits a short minimum for bytes still in flight, extends while output is still arriving
-     * (so trailing output isn't truncated), and force-closes once output has been idle for
-     * {@link #DRAIN_IDLE_MS} — bounded by {@link #DRAIN_MAX_MS}.
+     * Wait for reader threads to finish on their own, extending while output is still arriving.
+     * Returns immediately on the healthy path (close frames arrived). Otherwise waits at least
+     * {@link #DRAIN_MIN_MS} for bytes in flight, extends while output keeps arriving, and
+     * returns once idle for {@link #DRAIN_IDLE_MS} — bounded by {@link #DRAIN_MAX_MS}.
      */
-    private static void drainThenClose(java.util.concurrent.atomic.AtomicLong lastData,
-                                       Thread stdoutThread, Thread stderrThread,
-                                       IncusTransport.WsConnection stdoutWs,
-                                       IncusTransport.WsConnection stderrWs) {
+    private static void awaitDrain(java.util.concurrent.atomic.AtomicLong lastData,
+                                   Thread... threads) {
         long start = System.nanoTime();
-        while (stdoutThread.isAlive() || stderrThread.isAlive()) {
+        while (true) {
+            boolean anyAlive = false;
+            for (var t : threads) if (t.isAlive()) { anyAlive = true; break; }
+            if (!anyAlive) break;
             long now = System.nanoTime();
             long sinceStartMs = (now - start) / 1_000_000L;
             long sinceDataMs  = (now - lastData.get()) / 1_000_000L;
@@ -812,6 +857,13 @@ class IncusApi {
                 break;
             }
         }
+    }
+
+    private static void drainThenClose(java.util.concurrent.atomic.AtomicLong lastData,
+                                       Thread stdoutThread, Thread stderrThread,
+                                       IncusTransport.WsConnection stdoutWs,
+                                       IncusTransport.WsConnection stderrWs) {
+        awaitDrain(lastData, stdoutThread, stderrThread);
         if (stdoutThread.isAlive() || stderrThread.isAlive()) {
             stdoutWs.close();
             stderrWs.close();

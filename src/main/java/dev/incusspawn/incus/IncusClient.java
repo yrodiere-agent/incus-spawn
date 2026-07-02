@@ -141,6 +141,13 @@ public class IncusClient {
                 0, 0, null, Map.of(), System.out, System.err);
     }
 
+    public int shellExecInteractivePtyAsUser(String container, String user, String script) {
+        var size = IncusApi.terminalSize();
+        return http().execStream(container,
+                List.of("su", "-", user, "-c", LOGIN_PATH_PREFIX + script),
+                0, 0, null, Map.of(), System.out, null, true, size[0], size[1]);
+    }
+
     /**
      * Execute a command inside a container as a given user.
      * Uses 'su - user -c "joined cmd"' to replicate the original CLI behaviour,

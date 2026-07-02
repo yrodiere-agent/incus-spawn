@@ -50,6 +50,14 @@ public class Container {
         }
     }
 
+    /** Like {@link #runAsUser} but with a PTY so isatty() returns true inside the container. */
+    public void runAsUserPty(String user, String script, String failureMessage) {
+        int exitCode = incus.shellExecInteractivePtyAsUser(name, user, script);
+        if (exitCode != 0) {
+            throw new IncusException(failureMessage + " (exit code " + exitCode + ")");
+        }
+    }
+
     /** Install packages via dnf. */
     public void dnfInstall(String failureMessage, String... packages) {
         var command = new String[packages.length + 3];
