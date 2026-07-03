@@ -152,6 +152,17 @@ public class CertificateAuthority {
     }
 
     /**
+     * Set JAVA_TOOL_OPTIONS in /etc/environment so all JVMs use the system trust store.
+     * Non-RPM JDKs (e.g. SDKMAN) bundle their own cacerts that won't include the MITM CA;
+     * this override makes them use the system-managed keystore instead.
+     */
+    public static void setJavaTrustStoreOverride(IncusClient incus, String container) {
+        incus.shellExec(container, "sh", "-c",
+                "grep -q 'javax.net.ssl.trustStore' /etc/environment 2>/dev/null || " +
+                "echo 'JAVA_TOOL_OPTIONS=\"-Djavax.net.ssl.trustStore=/etc/pki/java/cacerts\"' >> /etc/environment");
+    }
+
+    /**
      * Check whether a container's stored CA fingerprint matches the current CA.
      * If mismatched, push the current cert into the container and update metadata.
      * Returns true if a fix was applied, false if no action was needed.
@@ -168,6 +179,7 @@ public class CertificateAuthority {
                 ca.caCertPem() +
                 "CERTEOF");
         incus.shellExec(container, "update-ca-trust");
+        setJavaTrustStoreOverride(incus, container);
         incus.configSet(container, Metadata.CA_FINGERPRINT, ca.caFingerprint());
         return true;
     }
