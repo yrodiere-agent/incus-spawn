@@ -39,6 +39,11 @@ public class InstancePrep {
             return null;
         }
 
+        // Prefer PROFILE (always the leaf template name) for chain resolution;
+        // PARENT may point to a clone when branching from another clone.
+        var profile = incus.configGet(name, Metadata.PROFILE);
+        var templateName = (profile != null && !profile.isEmpty()) ? profile : parent;
+
         var networkMode = incus.configGet(name, Metadata.NETWORK_MODE);
         if (!NetworkMode.AIRGAP.name().equals(networkMode)) {
             if (!ProxyHealthCheck.checkOrWarn(incus)) return null;
@@ -57,7 +62,7 @@ public class InstancePrep {
 
         GuiPassthrough.checkGuiHealth(incus, name);
 
-        return parent;
+        return templateName;
     }
 
     private static void fixCaMismatch(IncusClient incus, String container) {
