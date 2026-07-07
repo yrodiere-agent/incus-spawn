@@ -170,11 +170,15 @@ public final class GitRemoteUtils {
     public static List<ImageDef.RepoEntry> collectReposForInstance(String instanceName, IncusClient incus) {
         var repos = new ArrayList<ImageDef.RepoEntry>();
         try {
+            // Prefer PROFILE (always the leaf template name) for chain resolution;
+            // PARENT may point to a clone when branching from another clone.
+            var profile = incus.configGet(instanceName, Metadata.PROFILE);
             var parent = incus.configGet(instanceName, Metadata.PARENT);
-            if (parent.isEmpty()) return repos;
+            var templateName = (profile != null && !profile.isEmpty()) ? profile : parent;
+            if (templateName.isEmpty()) return repos;
 
             var allDefs = ImageDef.loadAll();
-            var current = allDefs.get(parent);
+            var current = allDefs.get(templateName);
             while (current != null) {
                 repos.addAll(current.getRepos());
                 if (current.isRoot() || current.getParent() == null) break;

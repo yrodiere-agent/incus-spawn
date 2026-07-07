@@ -2241,6 +2241,18 @@ public class ListCommand extends BaseCommand {
         }
     }
 
+    /**
+     * Resolve the template name for chain resolution: prefer PROFILE (always the leaf
+     * template name, even when the instance was branched from another clone) over PARENT.
+     */
+    private static String resolveTemplateName(InstanceInfo instance) {
+        var profile = instance.profile;
+        if (profile != null && !profile.isEmpty() && !"-".equals(profile)) return profile;
+        var parent = instance.parent;
+        if (parent != null && !parent.isEmpty() && !"-".equals(parent)) return parent;
+        return null;
+    }
+
     private List<dev.incusspawn.config.ImageDef> getInheritanceChain(String templateName) {
         var chain = new ArrayList<dev.incusspawn.config.ImageDef>();
         var current = imageDefs.get(templateName);
@@ -2468,7 +2480,8 @@ public class ListCommand extends BaseCommand {
 
     private String resolveDefaultActionRef(InstanceInfo instance) {
         // Walk the template YAML chain (child wins over parent).
-        var chain = getInheritanceChain(instance.parent);
+        var templateName = resolveTemplateName(instance);
+        var chain = templateName != null ? getInheritanceChain(templateName) : List.<dev.incusspawn.config.ImageDef>of();
         if (!chain.isEmpty()) {
             for (int i = chain.size() - 1; i >= 0; i--) {
                 var def = chain.get(i);
@@ -2574,7 +2587,16 @@ public class ListCommand extends BaseCommand {
         return false;
     }
 
-    private String resolveDefaultCommandFromTemplate(String templateName) {
+    private String resolveDefaultCommandFromTemplate(String source) {
+        // When the source is a clone (not a template), resolve via its PROFILE metadata
+        var templateName = source;
+        if (!imageDefs.containsKey(templateName)) {
+            var profile = incus.configGet(source, Metadata.PROFILE);
+            if (profile != null && !profile.isEmpty()) {
+                templateName = profile;
+            }
+        }
+
         String ref = null;
         var chain = getInheritanceChain(templateName);
         if (!chain.isEmpty()) {
@@ -2586,7 +2608,7 @@ public class ListCommand extends BaseCommand {
                 }
             }
         } else {
-            var refValue = incus.configGet(templateName, Metadata.DEFAULT_ACTION);
+            var refValue = incus.configGet(source, Metadata.DEFAULT_ACTION);
             ref = (refValue == null || refValue.isBlank()) ? null : refValue;
         }
         if (ref == null) return null;
@@ -2641,9 +2663,9 @@ public class ListCommand extends BaseCommand {
 
     private java.util.Set<String> collectInstalledTools(InstanceInfo instance) {
         var tools = new java.util.LinkedHashSet<String>();
-        var parent = instance.parent;
-        if (parent == null || parent.isEmpty() || "-".equals(parent)) return tools;
-        var chain = getInheritanceChain(parent);
+        var templateName = resolveTemplateName(instance);
+        if (templateName == null) return tools;
+        var chain = getInheritanceChain(templateName);
         for (var def : chain) {
             for (var toolRef : def.getTools()) {
                 tools.add(toolRef.getName());
@@ -2660,9 +2682,9 @@ public class ListCommand extends BaseCommand {
 
     private java.util.List<ActionContext.RepoInfo> collectRepos(InstanceInfo instance) {
         var repos = new ArrayList<ActionContext.RepoInfo>();
-        var parent = instance.parent;
-        if (parent == null || parent.isEmpty() || "-".equals(parent)) return repos;
-        var chain = getInheritanceChain(parent);
+        var templateName = resolveTemplateName(instance);
+        if (templateName == null) return repos;
+        var chain = getInheritanceChain(templateName);
         for (var def : chain) {
             for (var repo : def.getRepos()) {
                 var path = repo.getPath();
