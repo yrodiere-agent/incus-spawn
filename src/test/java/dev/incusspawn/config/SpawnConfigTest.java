@@ -130,4 +130,31 @@ class SpawnConfigTest {
         assertEquals("~/my-templates", paths.get(0));
         assertEquals("/absolute/path", paths.get(1));
     }
+
+    @Test
+    void deserializeProxyDelegates() throws Exception {
+        var yaml = """
+                proxy:
+                  delegates:
+                    api.anthropic.com: http://127.0.0.1:8787
+                    github.com: https://proxy.example.com:9443
+                """;
+        var config = YAML.readValue(yaml, SpawnConfig.class);
+        assertEquals(2, config.getProxy().getDelegates().size());
+        assertEquals("http://127.0.0.1:8787", config.getProxy().getDelegates().get("api.anthropic.com"));
+        assertEquals("https://proxy.example.com:9443", config.getProxy().getDelegates().get("github.com"));
+    }
+
+    @Test
+    void proxyDelegatesDefaultsToEmpty() throws Exception {
+        var config = YAML.readValue("{}", SpawnConfig.class);
+        assertTrue(config.getProxy().getDelegates().isEmpty());
+    }
+
+    @Test
+    void proxyDelegatesSetterHandlesNull() {
+        var proxyConfig = new SpawnConfig.ProxyConfig();
+        proxyConfig.setDelegates(null);
+        assertTrue(proxyConfig.getDelegates().isEmpty());
+    }
 }

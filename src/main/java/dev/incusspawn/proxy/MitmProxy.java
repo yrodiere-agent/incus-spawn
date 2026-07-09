@@ -166,6 +166,8 @@ public class MitmProxy {
     private String caFingerprint = "";
     private volatile boolean dnsConfigured;
 
+    private java.util.Map<String, URI> upstreamDelegates = java.util.Map.of();
+
     private final String healthBindAddress;
 
     public MitmProxy(Vertx vertx, String bindAddress, int mitmPort, int healthPort,
@@ -210,12 +212,50 @@ public class MitmProxy {
         this.debugLog = debugLog;
     }
 
+    public void setUpstreamDelegates(java.util.Map<String, String> delegates) {
+        if (delegates == null || delegates.isEmpty()) {
+            this.upstreamDelegates = java.util.Map.of();
+            return;
+        }
+        var parsed = new java.util.HashMap<String, URI>();
+        for (var entry : delegates.entrySet()) {
+            var domain = entry.getKey();
+            var uri = URI.create(entry.getValue());
+            var scheme = uri.getScheme();
+            if (scheme == null || (!scheme.equals("http") && !scheme.equals("https"))) {
+                throw new IllegalArgumentException(
+                        "proxy.delegates: invalid scheme for " + domain + ": " + entry.getValue()
+                                + " (must be http:// or https://)");
+            }
+            if (!INTERCEPTED_DOMAIN_SET.contains(domain)) {
+                System.err.println("Warning: proxy delegate configured for '" + domain
+                        + "' but it is not an intercepted domain — no traffic will be routed through it");
+            }
+            parsed.put(domain, uri);
+        }
+        this.upstreamDelegates = java.util.Map.copyOf(parsed);
+    }
+
+    private record UpstreamTarget(String host, int port, Boolean ssl) {}
+
+    private UpstreamTarget resolveUpstream(String domain) {
+        var proxyUri = upstreamDelegates.get(domain);
+        if (proxyUri != null) {
+            boolean useSsl = "https".equals(proxyUri.getScheme());
+            int port = proxyUri.getPort() > 0
+                    ? proxyUri.getPort()
+                    : (useSsl ? 443 : 80);
+            return new UpstreamTarget(proxyUri.getHost(), port, useSsl);
+        }
+        return new UpstreamTarget(domain, 443, null);
+    }
+
     /** Create a MitmProxy using credentials from SpawnConfig and the Incus bridge gateway IP. */
     public static MitmProxy fromConfig(Vertx vertx, IncusClient incus) {
         var config = SpawnConfig.load();
         var gatewayIp = resolveGatewayIp(incus);
         var claude = config.getClaude();
-        return new MitmProxy(
+        var proxy = new MitmProxy(
                 vertx,
                 gatewayIp,
                 DEFAULT_MITM_PORT,
@@ -227,6 +267,8 @@ public class MitmProxy {
                 claude.isUseVertex(),
                 claude.getCloudMlRegion(),
                 claude.getVertexProjectId());
+        proxy.setUpstreamDelegates(config.getProxy().getDelegates());
+        return proxy;
     }
 
     /** Resolve the Incus bridge gateway IP (e.g. "10.166.11.1").
@@ -479,6 +521,11 @@ public class MitmProxy {
         } else if (!oauthToken.isBlank()) {
             System.out.println("OAuth mode: injecting Bearer token for api.anthropic.com");
         }
+        if (!upstreamDelegates.isEmpty()) {
+            System.out.println("Upstream delegates:");
+            upstreamDelegates.forEach((domain, proxyUri) ->
+                    System.out.println("  " + domain + " -> " + proxyUri));
+        }
         System.out.println();
         System.out.println("Press Ctrl+C to stop.");
 
@@ -588,8 +635,7 @@ public class MitmProxy {
         var path = clientReq.path();
         var uri = clientReq.uri();
         var requestOptions = new RequestOptions()
-                .setMethod(clientReq.method())
-                .setPort(443);
+                .setMethod(clientReq.method());
 
         if (useVertex && ANTHROPIC_DOMAINS.contains(domain) && path != null) {
             if (path.startsWith("/v1/projects/")) {
@@ -615,7 +661,9 @@ public class MitmProxy {
         } else {
             upstreamHost = domain;
         }
-        requestOptions.setHost(upstreamHost).setURI(uri);
+        var upstream = resolveUpstream(upstreamHost);
+        requestOptions.setHost(upstream.host()).setPort(upstream.port())
+                .setSsl(upstream.ssl()).setURI(uri);
 
         sendApiRequest(clientReq, requestOptions, upstreamHost, domain,
                 bodyBytes, isVertexRequest, bodyRewritten, false,
@@ -761,10 +809,12 @@ public class MitmProxy {
      */
     private void fetchCacheAndServe(HttpServerRequest clientReq, String domain,
                                     String digest, Path cacheFile, String ref) {
+        var upstream = resolveUpstream(domain);
         var options = new RequestOptions()
                 .setMethod(clientReq.method())
-                .setHost(domain)
-                .setPort(443)
+                .setHost(upstream.host())
+                .setPort(upstream.port())
+                .setSsl(upstream.ssl())
                 .setURI(clientReq.uri());
 
         upstreamClient.request(options).onSuccess(upReq -> {
@@ -1150,10 +1200,12 @@ public class MitmProxy {
 
     /** Relay a non-cacheable request transparently to upstream. */
     private void relayRequest(HttpServerRequest clientReq, String domain) {
+        var upstream = resolveUpstream(domain);
         var options = new RequestOptions()
                 .setMethod(clientReq.method())
-                .setHost(domain)
-                .setPort(443)
+                .setHost(upstream.host())
+                .setPort(upstream.port())
+                .setSsl(upstream.ssl())
                 .setURI(clientReq.uri());
 
         upstreamClient.request(options).onSuccess(upReq -> {

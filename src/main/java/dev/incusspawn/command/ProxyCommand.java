@@ -136,6 +136,12 @@ public class ProxyCommand extends BaseCommand {
                 System.out.println("  API key:       " + (apiKey.isBlank() ? "(not configured)" : "configured"));
             }
             System.out.println("  GitHub token:  " + (ghToken.isBlank() ? "(not configured)" : "configured"));
+            var delegates = config.getProxy().getDelegates();
+            if (!delegates.isEmpty()) {
+                System.out.println("  Delegates:");
+                delegates.forEach((domain, url) ->
+                        System.out.println("    " + domain + " -> " + url));
+            }
             System.out.println("  Log file:      " + logFile());
             System.out.println();
 
@@ -144,6 +150,7 @@ public class ProxyCommand extends BaseCommand {
             var proxy = new MitmProxy(vertx, gatewayIp, port, healthPort, healthBindAddress,
                     apiKey, oauthToken, ghToken,
                     claude.isUseVertex(), claude.getCloudMlRegion(), claude.getVertexProjectId());
+            proxy.setUpstreamDelegates(delegates);
 
             if (debug) {
                 try {

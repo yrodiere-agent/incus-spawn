@@ -70,6 +70,24 @@ The proxy must be running for non-airgapped containers. `isx init` can install i
 
 The proxy also caches container image layers and build artifacts on the host — the same dependency is never downloaded twice (see [Caching](#caching)).
 
+### Upstream Delegates
+
+You can route traffic for specific intercepted domains through an intermediate HTTP proxy before it reaches the real upstream server. This is useful for cost-reduction proxies like [headroom](https://github.com/headroomlabs-ai/headroom) that compress LLM API context, corporate proxies, or any reverse proxy that adds value between the MITM proxy and the real upstream.
+
+Configure upstream delegates in `~/.config/incus-spawn/config.yaml`:
+
+```yaml
+proxy:
+  delegates:
+    api.anthropic.com: http://127.0.0.1:8787
+```
+
+When configured, the MITM proxy sends traffic for the specified domain to the delegate instead of connecting directly to the real upstream. Credential injection still happens before the delegate — the delegate receives the request with real authentication already in place.
+
+The delegate URL determines the protocol: `http://` for plain HTTP (typical for localhost proxies like headroom), `https://` for TLS. Only [intercepted domains](#credential-isolation) can be delegated.
+
+**Example: headroom for Claude API cost reduction.** Install headroom (`pip install "headroom-ai[all]"`), start it (`headroom proxy --port 8787`), and add the config above. All Claude API traffic from every container is automatically compressed by headroom before reaching Anthropic — no per-container setup needed. See the [headroom documentation](https://github.com/headroomlabs-ai/headroom) for configuration options.
+
 ## Branching
 
 Like `git branch`, branching creates an instant copy-on-write clone of any template. Each branch has its own independent filesystem -- changes in one branch cannot affect the template or any other branch. The storage backend (btrfs/zfs/lvm) deduplicates unchanged data automatically, so branches are instant to create and only consume disk space for their own modifications. `isx init` automatically creates a btrfs storage pool if needed.

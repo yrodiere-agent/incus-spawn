@@ -24,6 +24,7 @@ public class SpawnConfig {
 
     private ClaudeConfig claude = new ClaudeConfig();
     private GitHubConfig github = new GitHubConfig();
+    private ProxyConfig proxy = new ProxyConfig();
     private java.util.List<String> searchPaths = java.util.List.of();
     @JsonProperty("host-path")
     private String hostPath = "";
@@ -77,10 +78,20 @@ public class SpawnConfig {
         public void setToken(String token) { this.token = token == null ? "" : token; }
     }
 
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class ProxyConfig {
+        private Map<String, String> delegates = Map.of();
+
+        public Map<String, String> getDelegates() { return delegates; }
+        public void setDelegates(Map<String, String> delegates) { this.delegates = delegates == null ? Map.of() : delegates; }
+    }
+
     public ClaudeConfig getClaude() { return claude; }
     public void setClaude(ClaudeConfig claude) { this.claude = claude; }
     public GitHubConfig getGithub() { return github; }
     public void setGithub(GitHubConfig github) { this.github = github; }
+    public ProxyConfig getProxy() { return proxy; }
+    public void setProxy(ProxyConfig proxy) { this.proxy = proxy; }
     public java.util.List<String> getSearchPaths() { return searchPaths; }
     public void setSearchPaths(java.util.List<String> searchPaths) { this.searchPaths = searchPaths == null ? java.util.List.of() : searchPaths; }
     public String getHostPath() { return hostPath; }
