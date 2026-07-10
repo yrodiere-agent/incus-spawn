@@ -628,24 +628,59 @@ public class InitCommand extends BaseCommand {
                 "container's root user maps to an unprivileged UID range",
                 "on the host, preventing privilege escalation.");
         boolean changed = false;
-        try {
-            var subuid = java.nio.file.Files.readString(java.nio.file.Path.of("/etc/subuid"));
-            if (!subuid.contains("root:1000:1")) {
-                runHost("sh", "-c", "echo 'root:1000:1' | sudo tee -a /etc/subuid /etc/subgid");
-                changed = true;
-            }
-            if (!subuid.contains("root:1000000:65536")) {
-                runHost("sh", "-c", "echo 'root:1000000:65536' | sudo tee -a /etc/subuid /etc/subgid");
-                changed = true;
-            }
-        } catch (IOException e) {
-            System.err.println("  Warning: could not read /etc/subuid: " + e.getMessage());
+        for (var path : java.util.List.of("/etc/subuid", "/etc/subgid")) {
+            changed |= ensureSubidEntry(path, "root:1000:1", null);
+            // Align with Zabbly Incus packages which set root:1000000:1000000000.
+            changed |= ensureSubidEntry(path, "root:1000000:1000000000", "root:1000000:65536");
         }
         if (changed) {
             System.out.println("  Restarting Incus to apply idmap changes...");
             runHost("sudo", "systemctl", "restart", "incus");
         }
         System.out.println("  subuid/subgid configured.");
+    }
+
+    private boolean ensureSubidEntry(String path, String entry, String oldEntry) {
+        String content;
+        try {
+            content = Files.readString(java.nio.file.Path.of(path));
+        } catch (IOException e) {
+            System.err.println("  Warning: could not read " + path + ": " + e.getMessage());
+            return false;
+        }
+
+        if (content.lines().anyMatch(l -> l.equals(entry))) {
+            return false;
+        }
+
+        if (oldEntry != null && content.lines().anyMatch(l -> l.equals(oldEntry))) {
+            runHost("sudo", "sed", "-i", "s/^" + Pattern.quote(oldEntry) + "$/" + entry + "/", path);
+            return true;
+        }
+
+        // Extract the prefix (e.g. "root:1000000:") to detect unexpected entries.
+        var prefix = entry.substring(0, entry.lastIndexOf(':') + 1);
+        var existing = content.lines().filter(l -> l.startsWith(prefix)).findFirst();
+
+        if (existing.isEmpty()) {
+            runHost("sh", "-c", "echo '" + entry + "' | sudo tee -a " + path);
+            return true;
+        }
+
+        System.err.println();
+        System.err.println("  " + path + " contains an unexpected entry: " + existing.get());
+        System.err.println("  incus-spawn expects: " + entry);
+        var console = System.console();
+        if (console != null) {
+            System.err.print("  [1;33mReplace it? (y/N): [0m");
+            var answer = console.readLine().strip();
+            if (answer.equalsIgnoreCase("y")) {
+                runHost("sudo", "sed", "-i", "s/^" + Pattern.quote(existing.get()) + "$/" + entry + "/", path);
+                return true;
+            }
+        }
+        System.err.println("  Skipped — containers may not start correctly.");
+        return false;
     }
 
     private void initializeIncus() {
