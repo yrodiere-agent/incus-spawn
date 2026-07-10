@@ -619,6 +619,7 @@ public class BuildCommand extends BaseCommand {
 
         System.out.println("Deriving from parent image '" + parentCanonical + "'...");
         incus.copy(parentSource, buildName);
+        incus.configSet(buildName, "security.idmap.size", "165536");
         incus.configSet(buildName, "security.nesting", "true");
         if (Environment.isLinux()) {
             incus.configSet(buildName, "security.syscalls.intercept.setxattr", "true");
@@ -733,6 +734,9 @@ public class BuildCommand extends BaseCommand {
         // every exec call while systemd-tmpfiles processes device nodes.
         // Podman uses fuse-overlayfs instead of native mknod-based whiteouts.
         incus.configSet(buildName, "raw.idmap", "both 1000 1000");
+        // Map 165536 UIDs (0-165535) so subordinate UIDs 100000-165535
+        // are available for rootless podman inside the container.
+        incus.configSet(buildName, "security.idmap.size", "165536");
         incus.configSet(buildName, "security.nesting", "true");
         if (Environment.isLinux()) {
             incus.configSet(buildName, "security.syscalls.intercept.setxattr", "true");
@@ -793,6 +797,10 @@ public class BuildCommand extends BaseCommand {
                     "echo 'agentuser ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/agentuser")
                     .assertSuccess("Failed to configure passwordless sudo");
         }
+        container.sh(
+                "echo 'agentuser:100000:65536' > /etc/subuid && " +
+                "echo 'agentuser:100000:65536' > /etc/subgid")
+                .assertSuccess("Failed to configure subordinate UIDs");
 
         if (!prebaked) {
             container.sh(
