@@ -121,3 +121,112 @@ jobs:
           name: vm-console-log
           path: vm-console.log
           retention-days: 7
+
+  isx-integration-tests:
+    needs: [unit-tests]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install Incus
+        run: |
+          curl -fsSL https://pkgs.zabbly.com/key.asc | gpg --dearmor \
+            | sudo tee /etc/apt/keyrings/zabbly.gpg >/dev/null
+          codename=$(. /etc/os-release && echo "$VERSION_CODENAME")
+          echo "deb [signed-by=/etc/apt/keyrings/zabbly.gpg] https://pkgs.zabbly.com/incus/stable $codename main" \
+            | sudo tee /etc/apt/sources.list.d/zabbly-incus-stable.list
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq incus btrfs-progs
+          sudo usermod -aG incus-admin "$USER"
+
+          # Pre-initialize Incus and create a small btrfs CoW pool so
+          # isx init doesn't hang creating an unbounded one (timed out at 19min on CI).
+          # Use sudo for both commands — admin init creates ~/.config/incus/config.yml
+          # as root, so subsequent commands must also use sudo to read it.
+          sg incus-admin -c "sudo incus admin init --minimal"
+          sudo chown -R "$USER:$USER" ~/.config/incus/
+          sg incus-admin -c "incus storage create cow btrfs size=5GiB"
+
+          # Docker is pre-installed on Ubuntu runners and sets the FORWARD chain
+          # default policy to DROP, blocking Incus container traffic. Insert rules
+          # at the top of FORWARD to allow traffic through the Incus bridge.
+          sudo iptables -I FORWARD -i incusbr0 -j ACCEPT
+          sudo iptables -I FORWARD -o incusbr0 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+
+      - name: Install Oracle GraalVM JDK 25
+        uses: graalvm/setup-graalvm@v1
+        with:
+          java-version: '25'
+          distribution: 'graalvm'
+
+      - name: Build and install isx
+        run: |
+          mvn package -DskipTests -q
+          mkdir -p "$HOME/.local/bin"
+          printf '#!/bin/sh\nexec java -jar %s/target/quarkus-app/quarkus-run.jar "$@"\n' "$PWD" \
+            > "$HOME/.local/bin/isx"
+          chmod +x "$HOME/.local/bin/isx"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Initialize isx
+        run: |
+          # Run isx init non-interactively (empty stdin skips all prompts)
+          sg incus-admin -c "yes '' | isx init"
+
+      - name: Start MITM proxy
+        run: |
+          # Set a placeholder API key so the proxy starts (it needs claude.hasAuth() == true)
+          sed -i 's/apiKey: ""/apiKey: "sk-ant-placeholder-for-ci"/' \
+              ~/.config/incus-spawn/config.yaml
+
+          # Ubuntu has no firewalld, so isx init skips the iptables redirect.
+          # Add it manually: traffic from containers to gateway:443 → proxy on :18443
+          GATEWAY=$(sg incus-admin -c "incus network get incusbr0 ipv4.address" | cut -d/ -f1)
+          sudo iptables -t nat -A PREROUTING -i incusbr0 -d "$GATEWAY" -p tcp \
+              --dport 443 -j REDIRECT --to-port 18443
+
+          # Start the proxy in the background
+          sg incus-admin -c "isx proxy start" &
+
+          # Wait for the proxy health endpoint
+          echo "Waiting for proxy..."
+          for i in $(seq 1 30); do
+            if curl -sf "http://$GATEWAY:18080/health" >/dev/null 2>&1; then
+              echo "Proxy ready after ${i}s"
+              break
+            fi
+            if [ "$i" -eq 30 ]; then
+              echo "::error::Proxy did not become healthy within 30s"
+              exit 1
+            fi
+            sleep 1
+          done
+
+      - name: 'Container: build tpl-minimal'
+        run: sg incus-admin -c "isx build tpl-minimal --yes"
+
+      - name: 'Container: branch and start'
+        run: |
+          sg incus-admin -c "isx branch test-container --from tpl-minimal --no-start"
+          sg incus-admin -c "incus start test-container"
+          # Wait for network — isx branch normally does this in setupRuntime,
+          # but --no-start skips it. Without DHCP, DNS queries can't be sent.
+          echo "Waiting for container network..."
+          sg incus-admin -c "incus exec test-container -- bash -c '
+            systemctl start systemd-networkd 2>/dev/null
+            for i in \$(seq 1 30); do
+              ip -4 -o addr show eth0 | grep -q \"inet \" && break
+              sleep 0.5
+            done'"
+          echo "Container network ready"
+
+      - name: 'Container: run integration tests'
+        run: |
+          sg incus-admin -c "incus file push .github/scripts/test-instance.sh test-container/tmp/"
+          sg incus-admin -c "incus exec test-container -- bash /tmp/test-instance.sh"
+
+      - name: 'Container: cleanup'
+        if: always()
+        run: sg incus-admin -c "isx destroy test-container" || true
