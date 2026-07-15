@@ -50,8 +50,23 @@ su -l agentuser -c "podman info --format '{{.Host.IDMappings.UIDMap}}'" 2>&1 || 
 # This requires working subordinate UID/GID mappings:
 # - security.idmap.size must cover the subordinate range
 # - /etc/subuid and /etc/subgid must have entries for agentuser
+echo "  Pulling PostgreSQL image (with retries)..."
+pull_ok=false
+for attempt in 1 2 3; do
+    if su -l agentuser -c 'podman pull docker.io/library/postgres:17-alpine' 2>&1; then
+        pull_ok=true
+        break
+    fi
+    echo "  Pull attempt $attempt failed, retrying..."
+    sleep 2
+done
+
 echo "  Starting PostgreSQL container as agentuser (rootless)..."
-if ! su -l agentuser -c '
+if ! $pull_ok; then
+    echo "  FAIL: podman pull failed after 3 attempts"
+    FAIL=$((FAIL + 1))
+    ERRORS="${ERRORS}  - podman pull failed\n"
+elif ! su -l agentuser -c '
     podman run -d --name test-pg \
         -e POSTGRES_PASSWORD=testpass \
         -p 15432:5432 \
