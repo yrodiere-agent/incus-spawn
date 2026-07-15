@@ -637,6 +637,7 @@ public class BuildCommand extends BaseCommand {
         System.out.println("Deriving from parent image '" + parentCanonical + "'...");
         incus.copy(parentSource, buildName);
         if (!effectiveVm) {
+            incus.configSet(buildName, "security.idmap.size", "165536");
             incus.configSet(buildName, "security.nesting", "true");
             if (Environment.isLinux()) {
                 incus.configSet(buildName, "security.syscalls.intercept.setxattr", "true");
@@ -800,6 +801,7 @@ public class BuildCommand extends BaseCommand {
         // don't need any of these. Restart activates the new config.
         if (!effectiveVm) {
             incus.configSet(buildName, "raw.idmap", "both 1000 1000");
+            incus.configSet(buildName, "security.idmap.size", "165536");
             incus.configSet(buildName, "security.nesting", "true");
             if (Environment.isLinux()) {
                 incus.configSet(buildName, "security.syscalls.intercept.setxattr", "true");
@@ -872,6 +874,10 @@ public class BuildCommand extends BaseCommand {
                     "echo 'agentuser ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/agentuser")
                     .assertSuccess("Failed to configure passwordless sudo");
         }
+        container.sh(
+                "echo 'agentuser:100000:65536' > /etc/subuid && " +
+                "echo 'agentuser:100000:65536' > /etc/subgid")
+                .assertSuccess("Failed to configure subordinate UIDs");
 
         if (!prebaked) {
             container.sh(
