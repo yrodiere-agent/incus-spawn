@@ -230,3 +230,37 @@ jobs:
       - name: 'Container: cleanup'
         if: always()
         run: sg incus-admin -c "isx destroy test-container" || true
+
+      - name: 'Podman: create test template and build'
+        run: |
+          mkdir -p ~/.config/incus-spawn/images
+          cat > ~/.config/incus-spawn/images/test-podman.yaml << 'EOF'
+          name: tpl-test-podman
+          parent: tpl-minimal
+          packages:
+            - podman
+            - fuse-overlayfs
+          EOF
+          sg incus-admin -c "isx build tpl-test-podman --yes"
+
+      - name: 'Podman: branch and start'
+        run: |
+          sg incus-admin -c "isx branch test-podman --from tpl-test-podman --no-start"
+          sg incus-admin -c "incus start test-podman"
+          echo "Waiting for container network..."
+          sg incus-admin -c "incus exec test-podman -- bash -c '
+            systemctl start systemd-networkd 2>/dev/null
+            for i in \$(seq 1 30); do
+              ip -4 -o addr show eth0 | grep -q \"inet \" && break
+              sleep 0.5
+            done'"
+          echo "Container network ready"
+
+      - name: 'Podman: run rootless PostgreSQL'
+        run: |
+          sg incus-admin -c "incus file push .github/scripts/test-podman.sh test-podman/tmp/"
+          sg incus-admin -c "incus exec test-podman -- bash /tmp/test-podman.sh"
+
+      - name: 'Podman: cleanup'
+        if: always()
+        run: sg incus-admin -c "isx destroy test-podman" || true
