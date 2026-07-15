@@ -149,8 +149,8 @@ public class ProxyCommand extends BaseCommand {
             var vertx = Arc.container().instance(Vertx.class).get();
             var proxy = new MitmProxy(vertx, gatewayIp, port, healthPort, healthBindAddress,
                     apiKey, oauthToken, ghToken,
-                    claude.isUseVertex(), claude.getCloudMlRegion(), claude.getVertexProjectId());
-            proxy.setUpstreamDelegates(delegates);
+                    claude.isUseVertex(), claude.getCloudMlRegion(), claude.getVertexProjectId(),
+                    delegates);
 
             if (debug) {
                 try {

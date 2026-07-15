@@ -166,14 +166,15 @@ public class MitmProxy {
     private String caFingerprint = "";
     private volatile boolean dnsConfigured;
 
-    private java.util.Map<String, URI> upstreamDelegates = java.util.Map.of();
+    private final java.util.Map<String, URI> delegates;
 
     private final String healthBindAddress;
 
     public MitmProxy(Vertx vertx, String bindAddress, int mitmPort, int healthPort,
                      String healthBindAddress, String anthropicApiKey, String oauthToken,
                      String ghToken,
-                     boolean useVertex, String vertexRegion, String vertexProjectId) {
+                     boolean useVertex, String vertexRegion, String vertexProjectId,
+                     java.util.Map<String, String> delegates) {
         this.vertx = vertx;
         this.bindAddress = bindAddress;
         this.healthBindAddress = healthBindAddress;
@@ -185,6 +186,7 @@ public class MitmProxy {
         this.useVertex = useVertex;
         this.vertexRegion = vertexRegion != null ? vertexRegion : "";
         this.vertexProjectId = vertexProjectId != null ? vertexProjectId : "";
+        this.delegates = parseDelegates(delegates);
     }
 
     public void setDnsConfigured(boolean configured) {
@@ -212,10 +214,9 @@ public class MitmProxy {
         this.debugLog = debugLog;
     }
 
-    public void setUpstreamDelegates(java.util.Map<String, String> delegates) {
+    private static java.util.Map<String, URI> parseDelegates(java.util.Map<String, String> delegates) {
         if (delegates == null || delegates.isEmpty()) {
-            this.upstreamDelegates = java.util.Map.of();
-            return;
+            return java.util.Map.of();
         }
         var parsed = new java.util.HashMap<String, URI>();
         for (var entry : delegates.entrySet()) {
@@ -233,13 +234,13 @@ public class MitmProxy {
             }
             parsed.put(domain, uri);
         }
-        this.upstreamDelegates = java.util.Map.copyOf(parsed);
+        return java.util.Map.copyOf(parsed);
     }
 
     private record UpstreamTarget(String host, int port, Boolean ssl) {}
 
     private UpstreamTarget resolveUpstream(String domain) {
-        var proxyUri = upstreamDelegates.get(domain);
+        var proxyUri = delegates.get(domain);
         if (proxyUri != null) {
             boolean useSsl = "https".equals(proxyUri.getScheme());
             int port = proxyUri.getPort() > 0
@@ -255,7 +256,7 @@ public class MitmProxy {
         var config = SpawnConfig.load();
         var gatewayIp = resolveGatewayIp(incus);
         var claude = config.getClaude();
-        var proxy = new MitmProxy(
+        return new MitmProxy(
                 vertx,
                 gatewayIp,
                 DEFAULT_MITM_PORT,
@@ -266,9 +267,8 @@ public class MitmProxy {
                 config.getGithub().getToken(),
                 claude.isUseVertex(),
                 claude.getCloudMlRegion(),
-                claude.getVertexProjectId());
-        proxy.setUpstreamDelegates(config.getProxy().getDelegates());
-        return proxy;
+                claude.getVertexProjectId(),
+                config.getProxy().getDelegates());
     }
 
     /** Resolve the Incus bridge gateway IP (e.g. "10.166.11.1").
@@ -521,9 +521,9 @@ public class MitmProxy {
         } else if (!oauthToken.isBlank()) {
             System.out.println("OAuth mode: injecting Bearer token for api.anthropic.com");
         }
-        if (!upstreamDelegates.isEmpty()) {
-            System.out.println("Upstream delegates:");
-            upstreamDelegates.forEach((domain, proxyUri) ->
+        if (!delegates.isEmpty()) {
+            System.out.println("Delegates:");
+            delegates.forEach((domain, proxyUri) ->
                     System.out.println("  " + domain + " -> " + proxyUri));
         }
         System.out.println();
