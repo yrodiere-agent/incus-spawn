@@ -4,6 +4,7 @@ import dev.incusspawn.Environment;
 import dev.incusspawn.config.HostResourceSetup;
 import dev.incusspawn.config.SpawnConfig;
 import dev.incusspawn.incus.BridgeSubnetCheck;
+import dev.incusspawn.incus.FirewalldCheck;
 import dev.incusspawn.incus.IncusClient;
 import dev.incusspawn.proxy.CertificateAuthority;
 import dev.incusspawn.ssh.SshKeyManager;
@@ -559,30 +560,40 @@ public class InitCommand extends BaseCommand {
                 "tokens directly. This step sets up iptables port redirection",
                 "and generates a custom CA certificate trusted by containers.");
 
-        // Add iptables PREROUTING redirect: traffic arriving on incusbr0 destined
-        // for the gateway IP on port 443 is redirected to the proxy's listen port.
-        // Only traffic to the gateway IP is redirected (intercepted domains resolve
-        // there via dnsmasq); traffic to other IPs (e.g. maven repos) passes through.
         var gatewayIp = MitmProxy.resolveGatewayIp(incus);
         var config = SpawnConfig.load();
         config.setIncusBridgeGateway(gatewayIp);
         config.save();
-        System.out.println("  Adding iptables PREROUTING redirect (" + gatewayIp + ":443 -> "
-                + MitmProxy.DEFAULT_MITM_PORT + " on incusbr0)...");
-        runHostQuiet("sudo", "firewall-cmd", "--permanent", "--direct",
-                "--add-rule", "ipv4", "nat", "PREROUTING", "0",
-                "-i", "incusbr0", "-d", gatewayIp, "-p", "tcp", "--dport",
-                String.valueOf(MitmProxy.CONTAINER_FACING_PORT),
-                "-j", "REDIRECT", "--to-port",
-                String.valueOf(MitmProxy.DEFAULT_MITM_PORT));
-        // Remove overly broad redirect rule from previous installs (missing -d gateway)
-        runHostQuiet("sudo", "firewall-cmd", "--permanent", "--direct",
-                "--remove-rule", "ipv4", "nat", "PREROUTING", "0",
-                "-i", "incusbr0", "-p", "tcp", "--dport",
-                String.valueOf(MitmProxy.CONTAINER_FACING_PORT),
-                "-j", "REDIRECT", "--to-port",
-                String.valueOf(MitmProxy.DEFAULT_MITM_PORT));
-        runHostQuiet("sudo", "firewall-cmd", "--reload");
+
+        // Add iptables PREROUTING redirect: traffic arriving on incusbr0 destined
+        // for the gateway IP on port 443 is redirected to the proxy's listen port.
+        // Only traffic to the gateway IP is redirected (intercepted domains resolve
+        // there via dnsmasq); traffic to other IPs (e.g. maven repos) passes through.
+        if (!FirewalldCheck.isInstalled()) {
+            System.err.println("  Warning: firewall-cmd not found. Skipping iptables PREROUTING redirect.");
+            System.err.println("  The MITM proxy needs a PREROUTING rule to intercept container HTTPS traffic.");
+            System.err.println("  You can add it manually with:");
+            System.err.println("    sudo iptables -t nat -A PREROUTING -i incusbr0 -d " + gatewayIp
+                    + " -p tcp --dport " + MitmProxy.CONTAINER_FACING_PORT
+                    + " -j REDIRECT --to-port " + MitmProxy.DEFAULT_MITM_PORT);
+        } else {
+            System.out.println("  Adding iptables PREROUTING redirect (" + gatewayIp + ":443 -> "
+                    + MitmProxy.DEFAULT_MITM_PORT + " on incusbr0)...");
+            runHostQuiet("sudo", "firewall-cmd", "--permanent", "--direct",
+                    "--add-rule", "ipv4", "nat", "PREROUTING", "0",
+                    "-i", "incusbr0", "-d", gatewayIp, "-p", "tcp", "--dport",
+                    String.valueOf(MitmProxy.CONTAINER_FACING_PORT),
+                    "-j", "REDIRECT", "--to-port",
+                    String.valueOf(MitmProxy.DEFAULT_MITM_PORT));
+            // Remove overly broad redirect rule from previous installs (missing -d gateway)
+            runHostQuiet("sudo", "firewall-cmd", "--permanent", "--direct",
+                    "--remove-rule", "ipv4", "nat", "PREROUTING", "0",
+                    "-i", "incusbr0", "-p", "tcp", "--dport",
+                    String.valueOf(MitmProxy.CONTAINER_FACING_PORT),
+                    "-j", "REDIRECT", "--to-port",
+                    String.valueOf(MitmProxy.DEFAULT_MITM_PORT));
+            runHostQuiet("sudo", "firewall-cmd", "--reload");
+        }
 
         // Clean up old sysctl config from previous installs (no longer needed)
         runHostQuiet("sudo", "rm", "-f", "/etc/sysctl.d/99-incus-spawn.conf");
