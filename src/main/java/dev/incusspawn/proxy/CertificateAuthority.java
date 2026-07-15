@@ -98,6 +98,10 @@ public class CertificateAuthority {
                     derSequence(concat(derUtcTime(notBefore), derUtcTime(expiry))),
                     derDistinguishedName(domain),                       // subject
                     keyPair.getPublic().getEncoded(),                   // SubjectPublicKeyInfo
+                    // TODO: add SubjectKeyIdentifier (2.5.29.14) and AuthorityKeyIdentifier
+                    // (2.5.29.35) extensions. Without them, Python 3.14 / OpenSSL 3.5+ rejects
+                    // these leaf certs in strict X.509 mode (VERIFY_X509_STRICT), which breaks
+                    // downstream proxies like headroom unless they set HEADROOM_TLS_STRICT=0.
                     derExplicit(3, derSequence(concat(                  // extensions
                             derExtension(oidBasicConstraints(), true,
                                     derSequence(new byte[]{0x01, 0x01, 0x00})),
