@@ -238,6 +238,12 @@ jobs:
         if: always()
         run: sg incus-admin -c "isx destroy test-container" || true
 
+      - name: 'Podman: allow unprivileged user namespaces'
+        run: |
+          # Ubuntu 24.04 restricts unprivileged user namespace creation via AppArmor.
+          # Rootless podman inside Incus containers needs user namespaces for UID mapping.
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
       - name: 'Podman: create test template and build'
         run: |
           mkdir -p ~/.config/incus-spawn/images
