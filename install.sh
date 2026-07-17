@@ -83,7 +83,7 @@ else
         echo "  Set JAVA_HOME to a Java 25+ installation, or build with --native to avoid the Java requirement."
         exit 1
     fi
-    JAVA_VER=$("$JAVA_BIN" -version 2>&1 | head -1 | grep -oE '"[^"]+"' | tr -d '"')
+    JAVA_VER=$("$JAVA_BIN" -version 2>&1 | grep -oE '"[^"]+"' | head -1 | tr -d '"')
     case "$JAVA_VER" in
         1.*) JAVA_MAJOR=$(echo "$JAVA_VER" | cut -d. -f2) ;;
         *)   JAVA_MAJOR=$(echo "$JAVA_VER" | cut -d. -f1) ;;
