@@ -9,6 +9,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -75,7 +76,7 @@ class ClaudeSetupTest {
         var incus = mock(IncusClient.class);
         when(incus.shellExec(anyString(), any(String[].class))).thenReturn(OK);
 
-        new ClaudeSetup().configureSettings(new Container(incus, CONTAINER), new SpawnConfig.ClaudeConfig());
+        new ClaudeSetup().configureSettings(new Container(incus, CONTAINER), new SpawnConfig.ClaudeConfig(), Map.of());
 
         verify(incus).shellExec(eq(CONTAINER),
                 eq("sh"), eq("-c"), contains("/etc/claude-code/managed-settings.json"));
@@ -90,7 +91,7 @@ class ClaudeSetupTest {
         var incus = mock(IncusClient.class);
         when(incus.shellExec(anyString(), any(String[].class))).thenReturn(OK);
 
-        new ClaudeSetup().configureSettings(new Container(incus, CONTAINER), new SpawnConfig.ClaudeConfig());
+        new ClaudeSetup().configureSettings(new Container(incus, CONTAINER), new SpawnConfig.ClaudeConfig(), Map.of());
 
         // bypassPermissions should only be in managed settings, not user settings
         // User settings file is ~/.claude/settings.json
@@ -116,11 +117,8 @@ class ClaudeSetupTest {
         var incus = mock(IncusClient.class);
         when(incus.shellExec(anyString(), any(String[].class))).thenReturn(OK);
 
-        new ClaudeSetup().configureSettings(new Container(incus, CONTAINER), claude);
+        new ClaudeSetup().configureSettings(new Container(incus, CONTAINER), claude, Map.of());
 
-        // The trust-prompt bypass only applies to direct API key auth; in OAuth mode
-        // Claude Code never goes through that flow, so it shouldn't reference the
-        // placeholder API key at all.
         verify(incus, never()).shellExec(eq(CONTAINER),
                 eq("sh"), eq("-c"), contains("customApiKeyResponses"));
     }
@@ -131,7 +129,7 @@ class ClaudeSetupTest {
         when(incus.shellExec(anyString(), any(String[].class))).thenReturn(OK);
 
         new ClaudeSetup().configureSettings(new Container(incus, CONTAINER),
-                new SpawnConfig.ClaudeConfig(), "claude-sonnet-4-6");
+                new SpawnConfig.ClaudeConfig(), Map.of("model", "claude-sonnet-4-6"));
 
         var captor = org.mockito.ArgumentCaptor.forClass(String.class);
         verify(incus, atLeastOnce()).shellExec(eq(CONTAINER),
@@ -140,7 +138,7 @@ class ClaudeSetupTest {
         var settingsWrite = captor.getAllValues().stream()
                 .filter(cmd -> cmd.contains(".claude/settings.json") && !cmd.contains("/etc/claude-code"))
                 .findFirst().orElseThrow();
-        assertTrue(settingsWrite.contains("\"model\": \"claude-sonnet-4-6\""),
+        assertTrue(settingsWrite.contains("\"model\" : \"claude-sonnet-4-6\""),
                 "User settings.json should contain model when parameter is set");
     }
 
@@ -150,7 +148,7 @@ class ClaudeSetupTest {
         when(incus.shellExec(anyString(), any(String[].class))).thenReturn(OK);
 
         new ClaudeSetup().configureSettings(new Container(incus, CONTAINER),
-                new SpawnConfig.ClaudeConfig());
+                new SpawnConfig.ClaudeConfig(), Map.of());
 
         var captor = org.mockito.ArgumentCaptor.forClass(String.class);
         verify(incus, atLeastOnce()).shellExec(eq(CONTAINER),
@@ -169,7 +167,7 @@ class ClaudeSetupTest {
         when(incus.shellExec(anyString(), any(String[].class))).thenReturn(OK);
 
         new ClaudeSetup().reconfigure(new Container(incus, CONTAINER),
-                java.util.Map.of("model", "claude-opus-4-6"));
+                Map.of("model", "claude-opus-4-6"));
 
         var captor = org.mockito.ArgumentCaptor.forClass(String.class);
         verify(incus, atLeastOnce()).shellExec(eq(CONTAINER),
@@ -177,22 +175,70 @@ class ClaudeSetupTest {
 
         var commands = captor.getAllValues();
         assertTrue(commands.stream().anyMatch(cmd ->
-                        cmd.contains(".claude/settings.json") && cmd.contains("\"model\": \"claude-opus-4-6\"")),
+                        cmd.contains(".claude/settings.json") && cmd.contains("\"model\" : \"claude-opus-4-6\"")),
                 "reconfigure should write model to settings.json");
         assertFalse(commands.stream().anyMatch(cmd -> cmd.contains(".local/bin/claude")),
                 "reconfigure should not install the binary");
     }
 
     @Test
-    void parametersDeclaresModelAsOptionalReconfigurable() {
+    void parametersDeclaresAllSettingsAsOptionalReconfigurable() {
         var params = new ClaudeSetup().parameters();
-        assertTrue(params.containsKey("model"));
-        var model = params.get("model");
-        assertEquals("string", model.getType());
-        assertNotNull(model.getPattern());
-        assertNull(model.getDefault());
-        assertTrue(model.isOptional());
-        assertTrue(model.isReconfigurable());
+
+        for (var name : List.of("model", "attribution-commit", "attribution-pr",
+                "theme", "editor-mode", "output-style")) {
+            assertTrue(params.containsKey(name), "Should declare parameter: " + name);
+            var p = params.get(name);
+            assertEquals("string", p.getType());
+            assertTrue(p.isOptional(), name + " should be optional");
+            assertTrue(p.isReconfigurable(), name + " should be reconfigurable");
+        }
+
+        assertNotNull(params.get("model").getPattern());
+        assertNotNull(params.get("theme").getPattern());
+        assertNotNull(params.get("editor-mode").getPattern());
+    }
+
+    @Test
+    void buildUserSettingsWithAllParams() {
+        var params = Map.of(
+                "model", "claude-opus-4-6",
+                "attribution-commit", "Assisted-By: Claude Code <noreply@anthropic.com>",
+                "attribution-pr", "",
+                "theme", "dark",
+                "editor-mode", "vim",
+                "output-style", "Proactive"
+        );
+
+        var json = ClaudeSetup.buildUserSettings(params);
+
+        assertTrue(json.contains("\"disableDeepLinkRegistration\" : \"disable\""));
+        assertTrue(json.contains("\"model\" : \"claude-opus-4-6\""));
+        assertTrue(json.contains("\"theme\" : \"dark\""));
+        assertTrue(json.contains("\"editorMode\" : \"vim\""));
+        assertTrue(json.contains("\"outputStyle\" : \"Proactive\""));
+        assertTrue(json.contains("\"attribution\""));
+        assertTrue(json.contains("\"commit\" : \"Assisted-By: Claude Code <noreply@anthropic.com>\""));
+        assertTrue(json.contains("\"pr\" : \"\""));
+    }
+
+    @Test
+    void buildUserSettingsMinimal() {
+        var json = ClaudeSetup.buildUserSettings(Map.of());
+
+        assertTrue(json.contains("\"disableDeepLinkRegistration\" : \"disable\""));
+        assertFalse(json.contains("\"model\""));
+        assertFalse(json.contains("\"theme\""));
+        assertFalse(json.contains("\"attribution\""));
+    }
+
+    @Test
+    void buildUserSettingsAttributionPartial() {
+        var json = ClaudeSetup.buildUserSettings(
+                Map.of("attribution-commit", "Custom trailer"));
+
+        assertTrue(json.contains("\"commit\" : \"Custom trailer\""));
+        assertFalse(json.contains("\"pr\""));
     }
 
     @Test
