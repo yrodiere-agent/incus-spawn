@@ -76,12 +76,18 @@ run_tests isx-test-container || FAILED=true
 # --- VM (optional) ---
 if $WITH_VM; then
     echo ""
-    echo "=== Building tpl-minimal --type vm ==="
-    isx build tpl-minimal --type vm --yes
+    echo "=== Building tpl-test-vm ==="
+    mkdir -p ~/.config/incus-spawn/images
+    cat > ~/.config/incus-spawn/images/test-vm.yaml << 'VMEOF'
+    name: tpl-test-vm
+    parent: tpl-minimal
+    type: vm
+VMEOF
+    isx build tpl-test-vm --yes
 
     echo ""
     echo "=== Branching and starting VM ==="
-    isx branch isx-test-vm --from tpl-minimal --no-start
+    isx branch isx-test-vm --from tpl-test-vm --no-start
     incus start isx-test-vm
     echo "Waiting for VM agent..."
     for i in $(seq 1 60); do
