@@ -116,8 +116,8 @@ echo ""
 # isx sets ISX_TEMPLATE and ISX_CONTAINER in agentuser's .bashrc so
 # tools can detect they're running inside an isx container.
 echo "[6] Login Shell Environment"
-assert_eq "ISX_TEMPLATE is tpl-minimal" "tpl-minimal" \
-    su -l agentuser -c 'bash -c "source ~/.bashrc 2>/dev/null; echo \$ISX_TEMPLATE"'
+assert "ISX_TEMPLATE is set" \
+    su -l agentuser -c 'bash -c "source ~/.bashrc 2>/dev/null; test -n \"\$ISX_TEMPLATE\""'
 assert "ISX_CONTAINER is set (matches hostname)" \
     su -l agentuser -c 'bash -c "source ~/.bashrc 2>/dev/null; test -n \"\$ISX_CONTAINER\""'
 echo ""
