@@ -43,13 +43,54 @@ public class ClaudeSetup implements ToolSetup {
 
     @Override
     public Map<String, ToolDef.ParameterDef> parameters() {
+        var params = new java.util.LinkedHashMap<String, ToolDef.ParameterDef>();
+
         var model = new ToolDef.ParameterDef();
         model.setType("string");
         model.setDescription("Claude model ID (e.g. claude-opus-4-6, claude-sonnet-4-6, claude-haiku-4-5-20251001)");
         model.setPattern("^claude-[a-z0-9][-a-z0-9.]*$");
         model.setOptional(true);
         model.setReconfigurable(true);
-        return Map.of("model", model);
+        params.put("model", model);
+
+        var attributionCommit = new ToolDef.ParameterDef();
+        attributionCommit.setType("string");
+        attributionCommit.setDescription("Git commit attribution trailer (e.g. 'Assisted-By: Claude Code <noreply@anthropic.com>')");
+        attributionCommit.setOptional(true);
+        attributionCommit.setReconfigurable(true);
+        params.put("attribution-commit", attributionCommit);
+
+        var attributionPr = new ToolDef.ParameterDef();
+        attributionPr.setType("string");
+        attributionPr.setDescription("Pull request attribution text (empty string to omit)");
+        attributionPr.setOptional(true);
+        attributionPr.setReconfigurable(true);
+        params.put("attribution-pr", attributionPr);
+
+        var theme = new ToolDef.ParameterDef();
+        theme.setType("string");
+        theme.setDescription("Color theme (dark, light, dark-daltonized, light-daltonized)");
+        theme.setPattern("^(dark|light|dark-daltonized|light-daltonized)$");
+        theme.setOptional(true);
+        theme.setReconfigurable(true);
+        params.put("theme", theme);
+
+        var editorMode = new ToolDef.ParameterDef();
+        editorMode.setType("string");
+        editorMode.setDescription("Input editor mode (normal, vim)");
+        editorMode.setPattern("^(normal|vim)$");
+        editorMode.setOptional(true);
+        editorMode.setReconfigurable(true);
+        params.put("editor-mode", editorMode);
+
+        var outputStyle = new ToolDef.ParameterDef();
+        outputStyle.setType("string");
+        outputStyle.setDescription("Response style (Default, Proactive, Explanatory, Learning)");
+        outputStyle.setOptional(true);
+        outputStyle.setReconfigurable(true);
+        params.put("output-style", outputStyle);
+
+        return params;
     }
 
     @Override
@@ -75,13 +116,13 @@ public class ClaudeSetup implements ToolSetup {
     public void install(Container c, java.util.Map<String, String> resolvedParams) {
         installBinary(c);
         var claude = SpawnConfig.load().getClaude();
-        configureSettings(c, claude, resolvedParams.get("model"));
+        configureSettings(c, claude, resolvedParams);
     }
 
     @Override
     public void reconfigure(Container c, java.util.Map<String, String> resolvedParams) {
         var claude = SpawnConfig.load().getClaude();
-        configureSettings(c, claude, resolvedParams.get("model"));
+        configureSettings(c, claude, resolvedParams);
     }
 
     private void installBinary(Container c) {
@@ -139,12 +180,13 @@ public class ClaudeSetup implements ToolSetup {
     }
 
     static final String MANAGED_SETTINGS_PATH = "/etc/claude-code/managed-settings.json";
+    static final String USER_SETTINGS_PATH = "/home/agentuser/.claude/settings.json";
 
     void configureSettings(Container c, SpawnConfig.ClaudeConfig claudeConfig) {
-        configureSettings(c, claudeConfig, null);
+        configureSettings(c, claudeConfig, Map.of());
     }
 
-    void configureSettings(Container c, SpawnConfig.ClaudeConfig claudeConfig, String model) {
+    void configureSettings(Container c, SpawnConfig.ClaudeConfig claudeConfig, Map<String, String> params) {
         System.out.println("Configuring Claude Code for agent use...");
         var managedSettingsJson = """
                 {
@@ -175,14 +217,7 @@ public class ClaudeSetup implements ToolSetup {
         c.sh("mkdir -p /etc/claude-code");
         c.writeFile(MANAGED_SETTINGS_PATH, managedSettingsJson);
 
-        var settingsJsonBuilder = new StringBuilder();
-        settingsJsonBuilder.append("{\n");
-        settingsJsonBuilder.append("  \"disableDeepLinkRegistration\": \"disable\"");
-        if (model != null) {
-            settingsJsonBuilder.append(",\n  \"model\": \"").append(model).append("\"");
-        }
-        settingsJsonBuilder.append("\n}\n");
-        var settingsJson = settingsJsonBuilder.toString();
+        var settingsJson = buildUserSettings(params);
         var claudeJsonBuilder = new StringBuilder();
         claudeJsonBuilder.append("""
                 {
@@ -214,10 +249,42 @@ public class ClaudeSetup implements ToolSetup {
                 """);
         var claudeJson = claudeJsonBuilder.toString();
         c.sh("mkdir -p /home/agentuser/.claude");
-        c.writeFile("/home/agentuser/.claude/settings.json", settingsJson);
+        c.writeFile(USER_SETTINGS_PATH, settingsJson);
         c.writeFile("/home/agentuser/.claude.json", claudeJson);
         c.chown("/home/agentuser/.claude", "agentuser:agentuser");
         c.chown("/home/agentuser/.claude.json", "agentuser:agentuser");
+    }
+
+    static String buildUserSettings(Map<String, String> params) {
+        var root = JSON.createObjectNode();
+        root.put("disableDeepLinkRegistration", "disable");
+
+        putIfPresent(root, params, "model", "model");
+        putIfPresent(root, params, "theme", "theme");
+        putIfPresent(root, params, "editor-mode", "editorMode");
+        putIfPresent(root, params, "output-style", "outputStyle");
+
+        var commitTrailer = params.get("attribution-commit");
+        var prAttribution = params.get("attribution-pr");
+        if (commitTrailer != null || prAttribution != null) {
+            var attribution = root.putObject("attribution");
+            if (commitTrailer != null) attribution.put("commit", commitTrailer);
+            if (prAttribution != null) attribution.put("pr", prAttribution);
+        }
+
+        try {
+            return JSON.writerWithDefaultPrettyPrinter().writeValueAsString(root) + "\n";
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to serialize settings JSON", e);
+        }
+    }
+
+    private static void putIfPresent(com.fasterxml.jackson.databind.node.ObjectNode node,
+                                      Map<String, String> params, String paramKey, String jsonKey) {
+        var value = params.get(paramKey);
+        if (value != null) {
+            node.put(jsonKey, value);
+        }
     }
 
 }
