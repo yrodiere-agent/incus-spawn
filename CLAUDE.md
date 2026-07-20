@@ -107,6 +107,21 @@ Resolution order for both images and tools (later overrides earlier): built-in -
 
 `DownloadCache` handles host-side download caching with SHA256 verification. Archives are downloaded and extracted on the host, then pushed into containers. This avoids needing tar/curl inside containers.
 
+## CI Integration Tests
+
+`.github/workflows/test-integration.yml` runs on every push/PR to `main`. Three test jobs:
+
+- **`unit-tests`**: `mvn package` (no Incus required)
+- **`integration-tests`**: boots the appliance VM image under QEMU, checks it reaches `ISX READY` and passes an Incus smoke test
+- **`isx-integration-tests`**: installs Incus on Ubuntu 24.04, builds isx from the unit-tests artifact, runs `isx init`, starts the MITM proxy, builds templates (`tpl-minimal`, `tpl-test-podman`, `tpl-test-vm`), then runs test scripts inside branched instances
+
+The `isx-integration-tests` job exercises three environments: a container (from `tpl-minimal`), a rootless-podman container (from `tpl-test-podman`), and a VM (from `tpl-test-vm`). Test scripts live in `.github/scripts/`:
+
+- **`test-instance.sh`**: pushed into containers and VMs, tests proxy interception (Maven/GitHub HTTPS), git clone, passwordless sudo, systemd lifecycle, DNS interception, login shell env vars, and TLS certificate quality. Uses `assert()` / `assert_eq()` shell helpers.
+- **`test-podman.sh`**: pushed into the podman container, tests rootless podman (pull, run, build).
+
+When adding a new end-to-end test, add an `assert` call in the appropriate script under a new numbered section. The test runs as root inside the container; use `su -l agentuser -c "..."` to test user-level behavior. The `tpl-minimal` base image is Fedora with only git, curl, which, procps-ng, and findutils — install extra packages with `dnf install` inside the test if needed.
+
 ## Benchmarking
 
 `bench/run.sh` measures native image performance: binary size, startup time, memory (idle and peak RSS), throughput, and latency. See `bench/README.md` for full documentation.
