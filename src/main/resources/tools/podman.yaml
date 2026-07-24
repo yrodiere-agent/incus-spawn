@@ -23,6 +23,10 @@ files:
     content: |
       [engine]
       cgroup_manager = "cgroupfs"
+  - path: /etc/containers/registries.conf.d/10-short-names.conf
+    content: |
+      short-name-mode = "permissive"
+      unqualified-search-registries = ["docker.io"]
 
 env:
   - name: DOCKER_HOST
