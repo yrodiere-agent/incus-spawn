@@ -1202,6 +1202,62 @@ public class IncusClient {
         if (!resp.isSuccess()) throw new IncusException("Failed to copy " + source + " to " + target);
     }
 
+    /**
+     * Snapshot name created on every built template. Branches and derived templates
+     * copy from this snapshot instead of from the instance itself, which on btrfs
+     * gives true copy-on-write clones (near-zero disk cost until the clone diverges).
+     */
+    public static final String TEMPLATE_SNAPSHOT = "ready";
+
+    /**
+     * Create a snapshot of a stopped instance.
+     */
+    public void createSnapshot(String instance, String snapshotName) {
+        var resp = http().requestAndWait("POST",
+                "/1.0/instances/" + instance + "/snapshots",
+                Map.of("name", snapshotName, "stateful", false));
+        if (!resp.isSuccess()) {
+            throw new IncusException("Failed to create snapshot " + snapshotName + " of " + instance);
+        }
+    }
+
+    /**
+     * Delete a snapshot. No-op if the snapshot does not exist.
+     */
+    public void deleteSnapshot(String instance, String snapshotName) {
+        var resp = http().requestAndWait("DELETE",
+                "/1.0/instances/" + instance + "/snapshots/" + snapshotName, null);
+        if (!resp.isSuccess() && resp.statusCode() != 404) {
+            throw new IncusException("Failed to delete snapshot " + snapshotName + " of " + instance);
+        }
+    }
+
+    /**
+     * Check whether a snapshot exists on an instance.
+     */
+    public boolean snapshotExists(String instance, String snapshotName) {
+        return http().get("/1.0/instances/" + instance + "/snapshots/" + snapshotName).isSuccess();
+    }
+
+    /**
+     * Copy from a snapshot of an existing instance. On btrfs this produces a true
+     * copy-on-write clone that shares all unchanged blocks with the source snapshot.
+     */
+    public void copyFromSnapshot(String sourceInstance, String snapshotName, String target) {
+        var http = http();
+        var cowPool = findCowPool();
+        var body = new LinkedHashMap<String, Object>();
+        body.put("name", target);
+        body.put("source", Map.of("type", "copy",
+                "source", sourceInstance + "/" + snapshotName));
+        if (cowPool != null) body.put("storage", cowPool);
+        var resp = http.requestAndWait("POST", "/1.0/instances", body);
+        if (!resp.isSuccess()) {
+            throw new IncusException("Failed to copy " + sourceInstance + "/"
+                    + snapshotName + " to " + target);
+        }
+    }
+
     public String getLog(String instance) {
         var logsResp = http().get("/1.0/instances/" + instance + "/logs");
         if (!logsResp.isSuccess()) return "";

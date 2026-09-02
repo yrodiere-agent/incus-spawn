@@ -103,7 +103,11 @@ public class BranchCommand extends BaseCommand {
         BuildOutput.branchHeader(name, resolvedSource);
 
         BuildOutput.stepStart("Copying from template...");
-        incus.copy(resolvedSource, name);
+        if (incus.snapshotExists(resolvedSource, IncusClient.TEMPLATE_SNAPSHOT)) {
+            incus.copyFromSnapshot(resolvedSource, IncusClient.TEMPLATE_SNAPSHOT, name);
+        } else {
+            incus.copy(resolvedSource, name);
+        }
         BuildOutput.stepDone();
 
         String cpu;

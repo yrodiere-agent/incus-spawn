@@ -588,6 +588,16 @@ public class BuildCommand extends BaseCommand {
         activeBuild = null;
 
         stampReferencedSize(canonicalName, referenced);
+
+        try {
+            BuildOutput.stepStart("Creating template snapshot...");
+            incus.createSnapshot(canonicalName, IncusClient.TEMPLATE_SNAPSHOT);
+            BuildOutput.stepDone();
+        } catch (Exception e) {
+            BuildOutput.stepBreak();
+            BuildOutput.note("Could not create template snapshot: " + e.getMessage());
+            BuildOutput.note("Branches will use full copies instead of CoW clones.");
+        }
     }
 
     /**
@@ -849,7 +859,11 @@ public class BuildCommand extends BaseCommand {
         var effectiveVm = effectiveVm(imageDef);
 
         BuildOutput.stepStart("Deriving from parent image '" + parentCanonical + "'...");
-        incus.copy(parentSource, buildName);
+        if (incus.snapshotExists(parentSource, IncusClient.TEMPLATE_SNAPSHOT)) {
+            incus.copyFromSnapshot(parentSource, IncusClient.TEMPLATE_SNAPSHOT, buildName);
+        } else {
+            incus.copy(parentSource, buildName);
+        }
         if (!effectiveVm) {
             incus.configSet(buildName, "security.idmap.size", "165536");
             incus.configSet(buildName, "security.nesting", "true");
