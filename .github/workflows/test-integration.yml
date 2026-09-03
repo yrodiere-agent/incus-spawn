@@ -252,6 +252,11 @@ jobs:
 
           sg incus-admin -c "sudo incus admin init --minimal"
           sudo chown -R "$USER:$USER" ~/.config/incus/
+
+          # Pre-create a small btrfs pool so isx init finds it and skips its own
+          # 100GiB pool creation, which times out on CI runners (~19min).
+          # This is a CI-specific size constraint, not a test fixture — isx init
+          # would create the same pool with a larger backing file on a real machine.
           sg incus-admin -c "incus storage create cow btrfs size=5GiB"
 
       - name: Enable KVM
@@ -335,6 +340,9 @@ jobs:
           sg incus-admin -c "isx build tpl-minimal --yes"
           sg incus-admin -c "isx build tpl-test-podman --yes"
           sg incus-admin -c "isx build tpl-test-vm --yes"
+
+      - name: Test CoW branching
+        run: sg incus-admin -c "bash .github/scripts/test-cow-branching.sh"
 
       - name: Test container
         run: |
@@ -426,6 +434,9 @@ jobs:
 
           sg incus-admin -c "sudo incus admin init --minimal"
           sudo chown -R "$USER:$USER" ~/.config/incus/
+
+          # Pre-create a small btrfs pool so isx init finds it and skips its own
+          # 100GiB pool creation, which times out on CI runners (~19min).
           sg incus-admin -c "incus storage create cow btrfs size=5GiB"
 
       - name: Enable KVM
@@ -499,6 +510,9 @@ jobs:
           sg incus-admin -c "isx build tpl-minimal --yes"
           sg incus-admin -c "isx build tpl-test-podman --yes"
           sg incus-admin -c "isx build tpl-test-vm --yes"
+
+      - name: Test CoW branching
+        run: sg incus-admin -c "bash .github/scripts/test-cow-branching.sh"
 
       - name: Test container
         run: |
