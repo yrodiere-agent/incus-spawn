@@ -156,8 +156,9 @@ echo "  template du for ref:   ${TPL_DU_MB}MB"
 echo ""
 
 # The pool-level delta is the ground truth — it measures actual bytes
-# consumed on the backing device.  du may overcount on btrfs because
-# it reports referenced (shared) blocks per subvolume.
+# consumed on the backing device.  du overcounts on btrfs because it
+# reports referenced (shared) blocks per subvolume, so it is kept as
+# informational output only.
 #
 # On a CoW backend, pool delta should be small (metadata only).
 # On a dir backend, pool delta ≈ template size (full rsync copy).
@@ -165,9 +166,6 @@ THRESHOLD=$((TPL_DU_MB / 5))
 if [ "$THRESHOLD" -lt 50 ]; then THRESHOLD=50; fi
 
 echo "--- 6. Assertions ---"
-assert_lt "du overhead (${DU_DELTA}MB) under ${THRESHOLD}MB" \
-    "$DU_DELTA" "$THRESHOLD"
-
 assert_lt "Pool space.used overhead (${POOL_DELTA_MB}MB) under ${THRESHOLD}MB" \
     "$POOL_DELTA_MB" "$THRESHOLD"
 

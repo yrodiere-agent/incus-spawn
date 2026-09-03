@@ -250,9 +250,10 @@ jobs:
           sudo apt-get install -y -qq incus btrfs-progs qemu-system-x86
           sudo usermod -aG incus-admin "$USER"
 
-          sg incus-admin -c "sudo incus admin init --minimal"
-          sudo chown -R "$USER:$USER" ~/.config/incus/
+          # Create only the btrfs pool — skip 'incus admin init --minimal' so that
+          # isx init wires the default profile to the CoW pool (not a dir pool).
           sg incus-admin -c "incus storage create cow btrfs size=5GiB"
+          sudo chown -R "$USER:$USER" ~/.config/incus/
 
       - name: Enable KVM
         run: |
@@ -427,9 +428,10 @@ jobs:
           sudo apt-get install -y -qq incus btrfs-progs qemu-system-x86
           sudo usermod -aG incus-admin "$USER"
 
-          sg incus-admin -c "sudo incus admin init --minimal"
-          sudo chown -R "$USER:$USER" ~/.config/incus/
+          # Create only the btrfs pool — skip 'incus admin init --minimal' so that
+          # isx init wires the default profile to the CoW pool (not a dir pool).
           sg incus-admin -c "incus storage create cow btrfs size=5GiB"
+          sudo chown -R "$USER:$USER" ~/.config/incus/
 
       - name: Enable KVM
         run: |
@@ -580,8 +582,8 @@ jobs:
           sg incus-admin -c "isx destroy test-vm" || true
 
   # Regression: isx init must produce a working setup on a machine where Incus has never been
-  # initialized. The isx-integration-tests job above runs 'incus admin init --minimal' first,
-  # which populates the default profile — so it cannot catch init leaving that profile empty.
+  # initialized. The isx-integration-tests jobs above also skip 'incus admin init --minimal'
+  # now, but this job is the minimal reproducer — no isx binary, just the pool.
   # A pool without a default profile made every instance creation fail with
   # "Failed getting root disk: No root device could be found", and was self-latching: once a
   # pool existed, init reported "Incus already initialized" and skipped the repair forever.
