@@ -179,10 +179,10 @@ Resolution order for both images and tools (later overrides earlier): built-in -
 
 Each job runs on its own freshly-provisioned runner, so jobs never inherit each other's Incus state.
 
-`fresh-daemon-init` exists because `isx-integration-tests` runs `incus admin init --minimal` *before*
-`isx init`, which populates the default profile — so it cannot catch `isx init` failing to populate it
-itself. It installs Incus and creates only the storage pool, with no `admin init`, reproducing the
-state where a pool exists but the default profile is empty (every instance creation then fails with
+`fresh-daemon-init` exists because `isx-integration-tests` applies CI-specific fixups after `isx init`
+(e.g. rewiring the default profile's root disk pool) — so it cannot catch `isx init` failing to set up
+the profile itself. It installs Incus and creates only the storage pool, with no `admin init`, reproducing
+the state where a pool exists but the default profile is empty (every instance creation then fails with
 "Failed getting root disk: No root device could be found"). It asserts the profile has a root disk and
 a NIC, then launches a real instance — a profile that merely looks right can still name a bad pool.
 
@@ -198,6 +198,7 @@ The `isx-integration-tests` job exercises three environments: a container (from 
 
 - **`test-instance.sh`**: pushed into containers and VMs, tests proxy interception (Maven/GitHub HTTPS), git clone, passwordless sudo, systemd lifecycle, DNS interception, login shell env vars, and TLS certificate quality. Uses `assert()` / `assert_eq()` shell helpers.
 - **`test-podman.sh`**: pushed into the podman container, tests rootless podman (pull, run, build).
+- **`test-cow-branching.sh`**: run on the host (not inside a container), measures pool `space.used` before/after branching `tpl-minimal` to verify CoW snapshots don't duplicate disk. Asserts the branch lands on the same pool as the template and that pool overhead stays under 20% of template size.
 
 When adding a new end-to-end test, add an `assert` call in the appropriate script under a new numbered section. The test runs as root inside the container; use `su -l agentuser -c "..."` to test user-level behavior. The `tpl-minimal` base image is Fedora with only git, curl, which, procps-ng, and findutils — install extra packages with `dnf install` inside the test if needed.
 
